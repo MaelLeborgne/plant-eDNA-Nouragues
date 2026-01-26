@@ -70,8 +70,8 @@ i <- seq(1:30)
 j <- seq(1:40)
 grid <- expand.grid(i=i,j=j,presence=0) %>%
   mutate(
-    x=5+10*(i-1),
-    y=5+10*(j-1)
+    x=10*(i),
+    y=10*(j)
   )
 
 # Fonction de comptage
@@ -417,19 +417,19 @@ library(tibble)
 # diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
 # diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
 # diet_tab_GH <- extract_readcount(diet_data_GH,key="obiclean_weight")
-diet_tab_GH
+# diet_tab_GH
 
 # 18S
 # diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
 # diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
 # diet_tab_18S <- extract_readcount(diet_data_18S,key="obiclean_weight")
-diet_tab_18S
+# diet_tab_18S
 
 # ITS
 # diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
 # diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
 # diet_tab_ITS <- extract_readcount(diet_data_ITS,key="obiclean_weight")
-diet_tab_ITS
+# diet_tab_ITS
 
 # Centralize data in Named List
 diet_data_list <- setNames(
@@ -448,10 +448,99 @@ diet_tab_list <- setNames(
 
 ```
 
+## taxid > Famille/Genre/Espèce
+
 ## Functions
+
+### Export species count table
 
 ```{r}
 
+species_abundance_GH <- diet_data_GH %>%
+  filter(obitag_rank == "genus", !is.na(scientific_name)) %>%
+  count(scientific_name, sort = TRUE)
+
+```
+
+### Extract Gender count table (by sample)
+
+```{r}
+
+Extract_count_table <- function(mark,tag_rank,count_var) {
+  abundance_table <- diet_data_list[[mark]] %>%
+  filter(obitag_rank == tag_rank, !is.na(scientific_name)) %>%
+  count(scientific_name, sort = TRUE)
+  abundance_table
+}
+
+Extract_count_table("GH","species","scientific_name")
+
+Extract_count_table("GH","genus","scientific_name")
+
+# Extract_count_table("GH","genus","merged_sample")
 
 
 ```
+### Table with pcr ID
+
+```{r}
+library(jsonlite)
+
+x <- diet_data_GH$features[1]
+parsed <- fromJSON(x)
+parsed
+```
+
+
+### Correspondance Bota/Génèt
+
+```{r}
+# Import physical data of samples
+# containing x, y and pcr ID
+data_samples <- read.table(
+  "/home/jean/Bureau/doi_10_5061_dryad_dc28m__v20181029/Zinger_et_al_metabar_PP1_samples.txt",
+  header = TRUE,
+  comment.char = "#"
+)
+```
+
+```{r}
+
+Add_x_y <- function(df_genet_pcr){
+  df_genet_x_y <- df_genet_pcr %>%
+    left_join(data_samples$x,key="pcr") %>%
+    left_join(data_samples$y,key="pcr")
+  df_genet_x_y
+}
+
+```
+
+
+# Modèle Pipline
+
+```{r}
+
+# For one Genus
+Level = "genus"
+Name = "Eschweilera"
+
+# Apply Bota Model
+R_pixel = 10
+## Density grid
+## Gaussian filter
+## Bota result
+
+# Apply Genet Model
+## Import selected data
+## Join x/y coordinate
+## Genet result
+
+# Compare results
+
+
+```
+
+
+
+
+
