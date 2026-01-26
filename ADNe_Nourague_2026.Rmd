@@ -26,57 +26,15 @@ library(ggplot2)
 path <- "/home/jean/Bureau/ADNe_Nourague_2026/"
 file <- "Nour_2012.csv"
 bota <- read.csv(paste0(path,file),sep = ",",dec = ".")
+
+#load("~/Bureau/ADNe_Nourague_2026/.RData")
 ```
 
-## Map Lat / Long
+## Map Xfield / Yfield
 
 ```{r}
 
-ggplot(data = bota, aes(x = Lat, y = Lon)) +
-  geom_point(
-    aes(color = Family, size = CircCorr),
-    shape = 21,       # Cercle (21–25 permettent un remplissage)
-    fill = NA,        # Creux (pas de remplissage)
-    stroke = 1        # Épaisseur du contour
-  ) + theme(legend.position = "none")
-
-```
-
-## Map x / y
-
-```{r}
-# Points de référence pour le nouveau système de coordonée en x et y
-# Points de référence
-i_0_0 <- which.min(bota$Lon)
-lon0 <- bota$Lon[i_0_0]
-lat0 <- bota$Lat[i_0_0]
-
-i_0_1 <- which.min(bota$Lat)
-lon_0_1 <- bota$Lon[i_0_1]
-lat_0_1 <- bota$Lat[i_0_1]
-
-i_1_0 <- which.max(bota$Lat)
-lon_1_0 <- bota$Lon[i_1_0]
-lat_1_0 <- bota$Lat[i_1_0]
-
-# Vecteurs directeurs des axes
-vx <- c(lon_1_0 - lon0, lat_1_0 - lat0)
-vy <- c(lon_0_1 - lon0, lat_0_1 - lat0)
-
-# Normes au carré (plus simple pour projection)
-vx2 <- sum(vx^2)
-vy2 <- sum(vy^2)
-
-bota <- bota %>%
-  mutate(
-    dx = Lon - lon0,
-    dy = Lat - lat0,
-    x = 300 * (dx * vx[1] + dy * vx[2]) / vx2,   # projection sur l’axe x (300m)
-    y = 400 * (dx * vy[1] + dy * vy[2]) / vy2    # projection sur l’axe y (400m)
-  ) %>%
-  select(-dx, -dy)
-
-ggplot(data = bota, aes(x = x, y = y)) +
+ggplot(data = bota, aes(x = Xfield, y = Yfield)) +
   geom_point(
     aes(color = Family, size = CircCorr),
     shape = 21,       # Cercle (21–25 permettent un remplissage)
@@ -99,7 +57,7 @@ ggplot(data = bota, aes(x = x, y = y)) +
 
 # Select Genus
 #unique(bota$Genus)
-Genus_focus = "Goupia" # "Bagassa" "Eschweilera" "Eperua" "Pterocarpus" "Goupia" "Annona" "Ficus" "Garcinia" "Albizia" "Carapa" "Dicorynia" "Vouacapoua" "Qualea" "Inga" "Hevea" "Cecropia" "Anacardium"
+Genus_focus = "Eschweilera" # "Bagassa" "Eschweilera" "Eperua" "Pterocarpus" "Goupia" "Annona" "Ficus" "Garcinia" "Albizia" "Carapa" "Dicorynia" "Vouacapoua" "Qualea" "Inga" "Hevea" "Cecropia" "Anacardium"
 bota_focus <- bota[bota$Genus == Genus_focus,]
 
 ```
@@ -124,7 +82,7 @@ count_R <- function(grid, bota, R) {
   
   # Remplir le vecteur de densité
   count <- purrr::map_int(seq_len(nrow(grid)), \(i)
-  sum((grid$x[i]-bota$x)^2 + (grid$y[i]-bota$y)^2 <= R^2) # Théorème de pythagore
+  sum((grid$x[i]-bota$Xfield)^2 + (grid$y[i]-bota$Yfield)^2 <= R^2) # Théorème de pythagore
   )
   # retourner vecteur
   count
@@ -213,40 +171,20 @@ plot(img_smooth, xlim = c(0, 30), ylim = c(0, 40),
 
 axis(1, at = c(0, 10, 20, 30), labels = c(0, 10, 20, 30))
 axis(2, at = seq(0, 40, by = 10), labels = seq(0, 40, by = 10))
+legend(img_smooth)
 
 ```
 
-### Plot 3D
-
-```{r}
-library(plotly)
-
-z <- as.matrix(img_smooth)
-
-plot_ly(
-  z = ~z,
-  type = "surface",
-  colorscale = "Oranges"
-) %>% layout(
-  scene = list(
-    xaxis = list(title = "X"),
-    yaxis = list(title = "Y"),
-    zaxis = list(title = "N points")
-  )
-)
-```
-
-### MCMC (Metropolis Hasting) sur matrice discrète
+### MCMC (Metropolis Hasting) sur image smooth
 
 ```{r}
 set.seed(123)
 
 # Matrice lissée
 z <- as.matrix(img_smooth)
-z <- z / sum(z)  # normaliser
 
-nx <- ncol(z)
-ny <- nrow(z)
+nx <- nrow(z)
+ny <- ncol(z)
 
 # coordonnées x et y réelles
 x_vals <- seq(5, 5 + 10*(nx-1), length.out = nx)  # exemple correspondance i -> x
@@ -281,10 +219,10 @@ for(k in 1:n_iter){
   j1 <- min(j1, ny)
   
   # bilinear interpolation
-  z_new <- (1-di)*(1-dj)*z[j0,i0] + di*(1-dj)*z[j0,i1] +
-           (1-di)*dj*z[j1,i0] + di*dj*z[j1,i1]
+  z_new <- (1-di)*(1-dj)*z[i0,j0] + di*(1-dj)*z[i0,j1] +
+           (1-di)*dj*z[i1,j0] + di*dj*z[i1,j1]
   
-  z_current <- z[j,i]
+  z_current <- z[i,j]
   
   # accept/reject
   alpha <- z_new / z_current
@@ -300,11 +238,8 @@ for(k in 1:n_iter){
   )
 }
 
-samples <- as.data.frame(samples)
-
-# visualiser
-plot(samples$V2, samples$V1, pch=20, cex=0.5, col=rgb(1,0,0,0.2))
-
+samples <- as.data.frame(samples) %>%
+  rename("x"="V1","y"="V2")
 
 ```
 
@@ -325,15 +260,6 @@ df_kmeans <- data.frame(
   cluster = factor(kmeans_result$cluster)
 )
 
-# Tracer les points + contours de densité de chaque cluster
-ggplot(df_kmeans, aes(x = y, y = x, color = cluster)) +
-  geom_point(alpha = 0.5, size = 0.5) +
-  stat_density_2d(aes(fill = cluster, group = cluster), 
-                  color = "black", alpha = 0.1, geom = "polygon") +
-  coord_fixed() +
-  theme_minimal() +
-  labs(title = "K-means clustering avec contours de densité")
-
 ```
 
 ### Double plot
@@ -341,20 +267,27 @@ ggplot(df_kmeans, aes(x = y, y = x, color = cluster)) +
 ```{r}
 library(gridExtra)
 
-p1 <- ggplot(samples, aes(x = V2, y = V1)) +
+p1 <- ggplot(samples, aes(x = x, y = y)) +
   geom_point(alpha = 0.2, color = "red", size = 0.5) +
   coord_fixed() +
   theme_minimal() +
-  labs(title = "MCMC")
+  labs(title = "MCMC") +
+  scale_y_continuous(
+    limits = c(0, 400),
+    breaks = seq(0, 400, by = 100))
 
-p2 <- ggplot(df_kmeans, aes(x = y, y = x, color = cluster)) +
+p2 <- ggplot(df_kmeans, aes(x = x, y = y, color = cluster)) +
   geom_point(alpha = 0.5, size = 0.5) +
   stat_density_2d(aes(fill = cluster, group = cluster),
                   color = "black", alpha = 0.1, geom = "polygon") +
   coord_fixed() +
   theme_minimal() +
   theme(legend.position = "none")+
-  labs(title = "K-means clustering")
+  labs(title = "K-means clustering") +
+  scale_x_continuous(breaks = seq(0, 400, by = 100)) +
+  scale_y_continuous(
+    limits = c(0, 400),
+    breaks = seq(0, 400, by = 100))
 
 grid.arrange(p1, p2, ncol = 2)
 ```
@@ -481,28 +414,35 @@ setwd("/home/jean/Bureau/Augustin_ADNe_23janv26/")
 library(tibble)
 
 # GH
-diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
-diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-diet_tab_GH <- extract_readcount(diet_data_GH,key="obiclean_weight")
+# diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
+# diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+# diet_tab_GH <- extract_readcount(diet_data_GH,key="obiclean_weight")
 diet_tab_GH
 
 # 18S
-diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
-diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-diet_tab_18S <- extract_readcount(diet_data_18S,key="obiclean_weight")
+# diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
+# diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+# diet_tab_18S <- extract_readcount(diet_data_18S,key="obiclean_weight")
 diet_tab_18S
 
 # ITS
-diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
-diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-diet_tab_ITS <- extract_readcount(diet_data_ITS,key="obiclean_weight")
+# diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
+# diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+# diet_tab_ITS <- extract_readcount(diet_data_ITS,key="obiclean_weight")
 diet_tab_ITS
 
 # Centralize data in Named List
-diet_list <- setNames(
+diet_data_list <- setNames(
   list(diet_data_GH, # df
        diet_data_18S, 
        diet_data_ITS), 
+  c("GH","18S","ITS") # names
+  )
+
+diet_tab_list <- setNames(
+  list(diet_tab_GH, # df
+       diet_tab_18S, 
+       diet_tab_ITS), 
   c("GH","18S","ITS") # names
   )
 
