@@ -465,4 +465,53 @@ plot(envelope_result,
 
 ***Bagassa guianensis*** **et *Dicorynia guianensis* sont naturellement attirés**
 
+# Genetical Data
 
+## Importation
+
+```{r}
+# install.packages("remotes")
+# remotes::install_github("metabarcoding/robifastread")
+library(ROBIFastread)
+library(vegan)
+library(magrittr)
+library(dplyr)
+library(jsonify) # install.packages("jsonify")
+setwd("/home/jean/Bureau/Augustin_ADNe_23janv26/")
+library(tibble)
+
+# GH
+diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
+diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+diet_tab_GH <- extract_readcount(diet_data_GH,key="obiclean_weight")
+diet_tab_GH
+
+# 18S
+diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
+diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+diet_tab_18S <- extract_readcount(diet_data_18S,key="obiclean_weight")
+diet_tab_18S
+
+# ITS
+diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
+diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+diet_tab_ITS <- extract_readcount(diet_data_ITS,key="obiclean_weight")
+diet_tab_ITS
+
+# Centralize data in Named List
+diet_list <- setNames(
+  list(diet_data_GH, # df
+       diet_data_18S, 
+       diet_data_ITS), 
+  c("GH","18S","ITS") # names
+  )
+
+```
+
+## Functions
+
+```{r}
+
+
+
+```
