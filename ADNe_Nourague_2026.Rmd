@@ -30,19 +30,20 @@ bota <- read.csv(paste0(path,file),sep = ",",dec = ".")
 
 ```{r}
 
-ggplot(data = bota, aes(x = Xfield, y = Yfield)) +
+ggplot(data = bota_focus, aes(x = Xfield, y = Yfield)) +
   geom_point(
-    aes(color = Family, size = CircCorr),
+    aes(color = Genus, size = CircCorr),
     shape = 21,       # Cercle (21–25 permettent un remplissage)
     fill = NA,        # Creux (pas de remplissage)
     stroke = 1        # Épaisseur du contour
-  ) + theme(legend.position = "none")
+  ) + theme(legend.position = "none") +
+    theme_minimal()
 
 ```
 
 ## Grille de densité (pour une famille ou un genre donné)
 
-### Select Taxon
+### Select Taxa
 
 ```{r}
 
@@ -56,10 +57,10 @@ select_tax <- function(Data, Level, Name){
 # Familly_focus = "Fabaceae"
 # bota_focus <- bota[bota$Family == Familly_focus,]
 
-# Select Genus
-#unique(bota$Genus)
-Genus_focus = "Eschweilera" # "Bagassa" "Eschweilera" "Eperua" "Pterocarpus" "Goupia" "Annona" "Ficus" "Garcinia" "Albizia" "Carapa" "Dicorynia" "Vouacapoua" "Qualea" "Inga" "Hevea" "Cecropia" "Anacardium"
-bota_focus <- bota[bota$Genus == Genus_focus,]
+# # Select Genus
+# #unique(bota$Genus)
+# Genus_focus = "Eschweilera" # "Bagassa" "Eschweilera" "Eperua" "Pterocarpus" "Goupia" "Annona" "Ficus" "Garcinia" "Albizia" "Carapa" "Dicorynia" "Vouacapoua" "Qualea" "Inga" "Hevea" "Cecropia" "Anacardium"
+# bota_focus <- bota[bota$Genus == Genus_focus,]
 
 ```
 
@@ -72,7 +73,7 @@ normalization <- function(count) {
   density
 }
 
-make_density_grid <- function(bota, R){
+make_density_grid <- function(bota_focus, R){
   # Function wich : 
   # - Take bota dataframe
   # - Count the number of trees in a circle of radius R (pythagore)
@@ -80,19 +81,15 @@ make_density_grid <- function(bota, R){
   
   # Generate the grid (vector with coordiates)
   grid <- expand.grid(
-    i = seq(1:30), # X number of samples
-    j = seq(1:40), # Y number of samples
-    presence=0 # presence initial to zero
-    ) %>% 
-    mutate(
-      x=10*(i), # X position of samples
-      y=10*(j)  # Y position of samples
-      )
+    x = seq(10,300,10), # X position of samples
+    y = seq(10,400,10) # Y position of samples
+    )
   
-  grid$count <- pmap_int( # Apply a function to each coordinates (x,y)
+  grid$density <- pmap_int( # Apply a function to each coordinates (x,y)
   list(grid$x, grid$y), # Element of iterations
-  \(x, y) sum(  # Function to apply : Count TRUE ...
-    (x - bota$Xfield)^2 + (y - bota$Yfield)^2 <= R^2) # ... on Pytagore condition (dx²-dy² <= R²)
+  \(x, y) sum((x - bota_focus$Xfield)^2 + # Count TRUE ...
+              (y - bota_focus$Yfield)^2 <= R^2, # ... on Pytagore condition (dx²-dy² <= R²)
+              na.rm = TRUE)
   ) %>% normalization() # Then convert all count to density
   
   # Return the grid
@@ -480,158 +477,125 @@ library(ROBIFastread)
 library(vegan)
 library(magrittr)
 library(dplyr)
-library(jsonify) # install.packages("jsonify")
+library(jsonify)
 setwd("/home/jean/Bureau/Augustin_ADNe_23janv26/")
 library(tibble)
 
-# GH
-# diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
-# diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-# diet_tab_GH <- extract_readcount(diet_data_GH,key="obiclean_weight")
-# diet_tab_GH
-
-# 18S
-# diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
-# diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-# diet_tab_18S <- extract_readcount(diet_data_18S,key="obiclean_weight")
-# diet_tab_18S
-
-# ITS
-# diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
-# diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-# diet_tab_ITS <- extract_readcount(diet_data_ITS,key="obiclean_weight")
-# diet_tab_ITS
-
-# Centralize data in Named List
-diet_data_list <- setNames(
-  list(diet_data_GH, # df
-       diet_data_18S, 
-       diet_data_ITS), 
-  c("GH","18S","ITS") # names
+import_all_genet_data <- function(){
+  # GH
+  diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
+  diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+  
+  # 18S
+  diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
+  diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+  
+  # ITS
+  diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
+  diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+  
+  # Centralize data in Named List
+  ## complete data
+  diet_data_list <- setNames(
+    list(diet_data_GH, # df
+         diet_data_18S, 
+         diet_data_ITS), 
+    c("GH","18S","ITS") # names
   )
+}
 
-diet_tab_list <- setNames(
-  list(diet_tab_GH, # df
-       diet_tab_18S, 
-       diet_tab_ITS), 
-  c("GH","18S","ITS") # names
-  )
+extract_feature <- function(data,key){
+  # extract key (obiclean_weight, or other)
+  # with ROBIFastread function
+  # given the dataframe
+  diet_mat <- extract_readcount(data, key=key)
+  # The result is a dgCMatrix
+  diet_mat
+}
+
+dgCMatrix_to_dataframe <-function(matrix){
+  df <- as.data.frame(summary(matrix))
+  colnames(df) <- c("i", "j", "x")
+  # Return dataframe
+  df
+}
 
 ```
 
 ## taxid > Famille/Genre/Espèce
 
 ```{r}
-# taxid_FGE_col <-function(data){
-#   tax_table <- tax_name(
-#     data$taxid,
-#     get = c("family","genus","species"),
-#     db = "ncbi",
-#     ask = FALSE
-#     )
-#   final <- bind_cols(data, tax_table)
-#   final
-# }
-
-# install.packages("taxize")
 library(taxize)
-library(purrr)
-library(dplyr)
 library(stringr)
 
-# Take all unique taxid from clean genet data
-all_unique_taxid <- c(29695,29695)#unique(diet_data_GH)
-
-############ finir la all_unique
-
-# from taxid import full path
-taxo <- classification(all_unique_taxid, "ncbi")
-
-# Take the rank name for a give rank
+# Function Take the rank name for a give rank
 get_rank <- function(x, rank) {
   val <- x$name[x$rank == rank]
   if(length(val) == 0) NA else val
 }
 
-# Import F, G, s from taxo thanks to get.rank()
-tax_table <- map_dfr(taxo, ~tibble(
-  family  = get_rank(.x, "family"),
-  genus   = get_rank(.x, "genus"),
-  species = get_rank(.x, "species"),
-  taxid = all_unique_taxid ############## éviter la réplication
-))
+# Fonction to create taxid ref for local genet data from ncbi
+create_taxid_ref <- function(){
+  # Take all unique taxid from clean genet data
+  all_unique_taxid <- c(diet_data_GH$taxid, 
+                      diet_data_18S$taxid, 
+                      diet_data_ITS$taxid) %>% unique()
+  
+  # from unique taxid import list of full path
+  taxo <- classification(all_unique_taxid, "ncbi")
 
-# remove the genus from the specie
-tax_table$species <- word(tax_table$species, 2)
-
-# Join genet and FGs by taxID
-ref_taxid <- left_join(all_unique_taxid, tax_table, by = "taxid") 
-################## vérifier que c'est la fonction adaptée
-
-```
-
-
-## Functions
-
-### Export species count table
-
-```{r}
-
-species_abundance_GH <- diet_data_GH %>%
-  filter(obitag_rank == "genus", !is.na(scientific_name)) %>%
-  count(scientific_name, sort = TRUE)
-
-```
-
-### Extract Gender count table (by sample)
-
-```{r}
-
-Extract_count_table <- function(mark,tag_rank,count_var) {
-  abundance_table <- diet_data_list[[mark]] %>%
-  filter(obitag_rank == tag_rank, !is.na(scientific_name)) %>%
-  count(scientific_name, sort = TRUE)
-  abundance_table
+  # Import F, G, s from taxo thanks to get.rank()
+  tax_table <- map_dfr(taxo, ~tibble(
+    family  = get_rank(.x, "family"),
+    genus   = get_rank(.x, "genus"),
+    species = get_rank(.x, "species")
+  ))
+  
+  # remove the genus from the specie
+  tax_table$species <- word(tax_table$species, 2) # keep the second word
+  
+  # Add taxid to FGs
+  tax_table$taxid <- all_unique_taxid
 }
 
-Extract_count_table("GH","species","scientific_name")
-
-Extract_count_table("GH","genus","scientific_name")
-
-# Extract_count_table("GH","genus","merged_sample")
-
+get_FGs <-function(data){
+  # Get Familly, Genus, species from faxid reference
+  data <- left_join(data, tax_table, by="taxid")
+  data
+}
 
 ```
-### Table with pcr ID
+
+## Correspondance Bota/Génèt
 
 ```{r}
-library(jsonlite)
 
-x <- diet_data_GH$features[1]
-parsed <- fromJSON(x)
-parsed
-```
+# Ref pcr / (x,y)
+create_sample_ref <- function(){
+  # Import physical data of samples
+  data_samples <- read.table(
+    "/home/jean/Bureau/doi_10_5061_dryad_dc28m__v20181029/Zinger_et_al_metabar_PP1_samples.txt",
+    header = TRUE,
+    comment.char = "#"
+  )
+  # Select and split pcr
+  sample_ref <- data_samples %>%
+    select(pcr,x,y) %>%
+    separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
+    distinct(sample_loc, x, y)
+  
+  # Return Ref
+  sample_ref
+}
 
+# Add x and y data genet
+Add_x_y_from_pcr <- function(samples_count){
+  data <- left_join(samples_count, pcr_ref ,by="sample_loc")
+  data
+}
 
-### Correspondance Bota/Génèt
-
-```{r}
-# Import physical data of samples
-# containing x, y and pcr ID
-data_samples <- read.table(
-  "/home/jean/Bureau/doi_10_5061_dryad_dc28m__v20181029/Zinger_et_al_metabar_PP1_samples.txt",
-  header = TRUE,
-  comment.char = "#"
-)
-```
-
-```{r}
-# 
-Add_x_y <- function(df_genet_pcr){
-  df_genet_x_y <- df_genet_pcr %>%
-    left_join(data_samples$x,key="pcr") %>%
-    left_join(data_samples$y,key="pcr")
-  df_genet_x_y
+mean_by_pcrLoc <- function(data){
+  data <- left_join(data ,pcr_ref ,by="pcr_loc")
 }
 
 ```
@@ -643,40 +607,106 @@ Add_x_y <- function(df_genet_pcr){
 library(tidyverse)
 library(ggplot2)
 library(gridExtra)
+library(Matrix)
 
 # Import Data
-#load("~/Bureau/ADNe_Nourague_2026/.RData")
+# Botanical Data
 path <- "/home/jean/Bureau/ADNe_Nourague_2026/"
 file <- "Nour_2012.csv"
 bota <- read.csv(paste0(path,file),sep = ",",dec = ".")
+# Genetical Data
+# load("~/Bureau/ADNe_Nourague_2026/.RData")
+# load("~/Bureau/ADNe_Nourague_2026/.GenetData") # TODO
+# Taxid Ref
+# load("~/Bureau/ADNe_Nourague_2026/.TaxidRef") # TODO
+# sample_ref <- create_sample_ref()
 
-# Select data
-Level = "Genus" # change to low case for genetical !
-Name = "Eschweilera"
+# Global Parameters
+Level <- "Family"
+Name <- "Fabaceae"
+# Level <- "Genus"
+# Name <- "Eschweilera"
+R_pixel <- 5 # Bota count radius
+sigma <- 2 # Gaussian filter
+level <- tolower(Level) # low case for genetical
+Marker <- "GH"
+
+# Bota Model
+## Select data
 bota_focus <- select_tax(bota, Level, Name)
-
-# Apply Bota Model
-R_pixel = 15
 ## Density grid
 grid <- make_density_grid(bota_focus, R_pixel)
-p1 <- plot_grid(grid,"count") + 
-  labs(title = "Density grid with R=15")
+p1 <- plot_grid(grid,"density") +
+  labs(title = "Density grid with R=5")
 ## Gaussian filter
 img <- col_to_img(grid$count) # to image
-img_smooth <- isoblur(img, sigma = 2) # sigma ? # Neumann boundary condition (default)
+img_smooth <- isoblur(img, sigma = sigma) # Neumann boundary condition (default)
 grid_smooth <- img_to_col(img_smooth) # to grid
-p2 <- plot_grid(grid_smooth,"val") + 
+p2 <- plot_grid(grid_smooth,"val") +
   labs(title = "Gaussian filter")
-# Result Bota
-grid.arrange(p1, p2, ncol = 2)
 
 # Apply Genet Model
-## Import selected data
-## Join x/y coordinate
-## Result Genet
+## Select marker
+genet <- diet_data_list[[Marker]]
+## Get Familly, Gender, species cols
+genet <- get_FGs(genet)
+## Select taxa
+genet_focus <- select_tax(genet, level, Name) %>%
+  filter(!is.na(.data[[level]])) # col family, genus or specie
+## sample_name / count (for the targetted taxa)
+### Matrix
+sample_matrix <- extract_feature(genet_focus,"obiclean_weight") %>%
+  rowSums() # sum on diet_id
+### Dataframe
+sample_df <- sample_matrix %>% 
+  as.data.frame() 
+# give colnames
+sample_df$sample_id <- rownames(sample_df)
+sample_df$count <- sample_df$.
+sample_df <- sample_df %>%
+  select(sample_id,count)
+# mean by sample_loc
+sample_df <- sample_df %>%
+  separate(sample_id, into = c("sample_loc", "sample_rep"), sep = "_") %>%
+  group_by(sample_loc) %>%
+  summarise("count" = mean(count))
+# Add (x,y)
+sample_df <- left_join(sample_df, sample_ref, by="sample_loc")
+# Normalisation
+sample_df$density <- normalization(sample_df$count)
+# Plot
+p3 <- plot_grid(sample_df,"density")+
+  labs(title = "eDNA density")
 
 # Compare results
+## df join
+df_compare <- sample_df %>%
+  rename(dens_genet = density) %>% # rename density
+  left_join(grid, by = c("x", "y")) %>% # left join
+  rename(dens_bota = density) %>% # rename density
+  select(-count) %>%
+  mutate(err_abs = dens_genet - dens_bota) %>%
+  mutate(err_rel = (dens_genet - dens_bota) / dens_bota)
 
+# Create the plot
+p4 <- ggplot(df_compare, aes(x = x, y = y)) +
+  geom_tile(aes(fill = err_abs)) + # use col_name to take the column
+  scale_fill_gradient2(
+    low = "lightpink",      # valeurs négatives
+    mid = "white",    # neutre (0)
+    high = "lightgreen", # valeurs positives
+    midpoint = 0
+  ) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(fill = "Density") +
+  labs(title = "Absolute error")
+
+# Results
+grid.arrange(p1, p3, p4, ncol = 3)
+
+# Diagnostic : Justesse et précision
+hist(df_compare$dens_diff)
 
 ```
 
