@@ -13,16 +13,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Modèle Botanique
 
-## Library
+## Data Importation
 
 ```{r}
 library(tidyverse)
 library(ggplot2)
-```
 
-## Data Importation
-
-```{r}
 path <- "/home/jean/Bureau/ADNe_Nourague_2026/"
 file <- "Nour_2012.csv"
 bota <- read.csv(paste0(path,file),sep = ",",dec = ".")
@@ -46,9 +42,14 @@ ggplot(data = bota, aes(x = Xfield, y = Yfield)) +
 
 ## Grille de densité (pour une famille ou un genre donné)
 
-### Select by Taxon
+### Select Taxon
 
 ```{r}
+
+select_tax <- function(Data, Level, Name){
+  focus <- Data[Data[Level] == Name,]
+  focus
+}
 
 # # Select Familly
 # unique(bota$Familly)
@@ -65,43 +66,82 @@ bota_focus <- bota[bota$Genus == Genus_focus,]
 ### Grille de densité
 
 ```{r}
-# Génération de la grille
-i <- seq(1:30)
-j <- seq(1:40)
-grid <- expand.grid(i=i,j=j,presence=0) %>%
-  mutate(
-    x=10*(i),
-    y=10*(j)
-  )
-
-# Fonction de comptage
-count_R <- function(grid, bota, R) {
-  # grid : position x et y des point de reférence
-  # bota : position x et y des plantes
-  # R : rayon d'interaction autour de la reférence
-  
-  # Remplir le vecteur de densité
-  count <- purrr::map_int(seq_len(nrow(grid)), \(i)
-  sum((grid$x[i]-bota$Xfield)^2 + (grid$y[i]-bota$Yfield)^2 <= R^2) # Théorème de pythagore
-  )
-  # retourner vecteur
-  count
-}
 
 normalization <- function(count) {
   density <-  count / sum(count)
   density
 }
 
-# Différents périmètres de comptage
-# 5m de rayon
-grid$cinq <- count_R(grid, bota_focus, 5) %>% normalization()
-# 10m de rayon
-grid$dix <- count_R(grid, bota_focus, 10) %>% normalization()
-# 15m de rayon
-grid$quinze <- count_R(grid, bota_focus, 15) %>% normalization()
-# 20m de rayon
-grid$vingt <- count_R(grid, bota_focus, 20) %>% normalization()
+make_density_grid <- function(bota, R){
+  # Function wich : 
+  # - Take bota dataframe
+  # - Count the number of trees in a circle of radius R (pythagore)
+  # - Return the density grid
+  
+  # Generate the grid (vector with coordiates)
+  grid <- expand.grid(
+    i = seq(1:30), # X number of samples
+    j = seq(1:40), # Y number of samples
+    presence=0 # presence initial to zero
+    ) %>% 
+    mutate(
+      x=10*(i), # X position of samples
+      y=10*(j)  # Y position of samples
+      )
+  
+  grid$count <- pmap_int( # Apply a function to each coordinates (x,y)
+  list(grid$x, grid$y), # Element of iterations
+  \(x, y) sum(  # Function to apply : Count TRUE ...
+    (x - bota$Xfield)^2 + (y - bota$Yfield)^2 <= R^2) # ... on Pytagore condition (dx²-dy² <= R²)
+  ) %>% normalization() # Then convert all count to density
+  
+  # Return the grid
+  grid
+}
+
+plot_grid <- function(grid, col_name){
+  # Function with return plot from grid
+  
+  # Create the plot
+  p <- ggplot(grid, aes(x = x, y = y)) +
+    geom_tile(aes(fill = .data[[col_name]])) + # use col_name to take the column
+    # scale_fill_gradient(
+    #   low = "black",
+    #   high = "white"
+    #   ) +
+    coord_fixed() +
+    theme_minimal() +
+    labs(fill = "Densité")
+  
+  # Return plot
+  p
+}
+
+
+
+# # Fonction de comptage
+# count_R <- function(grid, bota, R) {
+#   # grid : position x et y des point de reférence
+#   # bota : position x et y des plantes
+#   # R : rayon d'interaction autour de la reférence
+#   
+#   # Remplir le vecteur de densité
+#   count <- purrr::map_int(seq_len(nrow(grid)), \(i)
+#   sum((grid$x[i]-bota$Xfield)^2 + (grid$y[i]-bota$Yfield)^2 <= R^2) # Théorème de pythagore
+#   )
+#   # retourner vecteur
+#   count
+# }
+
+# # Différents périmètres de comptage
+# # 5m de rayon
+# grid$cinq <- count_R(grid, bota_focus, 5) %>% normalization()
+# # 10m de rayon
+# grid$dix <- count_R(grid, bota_focus, 10) %>% normalization()
+# # 15m de rayon
+# grid$quinze <- count_R(grid, bota_focus, 15) %>% normalization()
+# # 20m de rayon
+# grid$vingt <- count_R(grid, bota_focus, 20) %>% normalization()
 
 ```
 
@@ -145,33 +185,64 @@ ggplot(grid_long, aes(x = x, y = y)) +
 ```{r}
 library(imager)
 
-# 3-columns / matrice
-mat <- matrix(grid$dix, nrow = 30, ncol = 40, byrow = FALSE) # exemple avec DIX
+col_to_img <- function(grid_col){
+  # columns / matrice
+  mat <- matrix(grid_col, nrow = 30, ncol = 40, byrow = FALSE)
+  # matrice / image
+  img <- as.cimg(mat, x=30, y=40)
+  # return image
+  img
+}
 
-# matrice / image
-img <- as.cimg(mat,x=30,y=40)
+img_to_col <- function(img){
+  # Create grid
+  grid <- expand.grid(
+    x = seq(10,300,10),
+    y = seq(10,400,10)
+    )
+  # Put image value
+  grid$val <- as.vector(img)
+  
+  # Return cols
+  grid
+}
 
-# Flou Gaussien
-img_smooth <- isoblur(img, sigma = 2)
+plot_grid_val <-function(grid){
+  p <- ggplot(grid, aes(x, y, fill = val)) +
+    geom_raster() +
+    coord_fixed()
+  # Return plot
+  p
+}
 
-# Subplot
-par(mfcol = c(1, 2))
+# # columns / matrice
+# mat <- matrix(grid_col, nrow = 30, ncol = 40, byrow = FALSE)
+# # matrice / image
+# img <- as.cimg(mat, x=30, y=40)
+# # return image
+# img
+# 
+# # Flou Gaussien
+# img_smooth <- isoblur(img, sigma = 2)
 
-# Plot 1
-plot(img, xlim = c(0, 30), ylim = c(0, 40),
-     xlab="x",ylab="y")
-
-axis(1, at = c(0, 10, 20, 30), labels = c(0, 10, 20, 30))
-axis(2, at = seq(0, 40, by = 10), labels = seq(0, 40, by = 10))
-
-
-# Plot 2
-plot(img_smooth, xlim = c(0, 30), ylim = c(0, 40),
-     xlab="x",ylab="y")
-
-axis(1, at = c(0, 10, 20, 30), labels = c(0, 10, 20, 30))
-axis(2, at = seq(0, 40, by = 10), labels = seq(0, 40, by = 10))
-legend(img_smooth)
+# # Subplot
+# par(mfcol = c(1, 2))
+# 
+# # Plot 1
+# plot(img, xlim = c(0, 30), ylim = c(0, 40),
+#      xlab="x",ylab="y")
+# 
+# axis(1, at = c(0, 10, 20, 30), labels = c(0, 10, 20, 30))
+# axis(2, at = seq(0, 40, by = 10), labels = seq(0, 40, by = 10))
+# 
+# 
+# # Plot 2
+# plot(img_smooth, xlim = c(0, 30), ylim = c(0, 40),
+#      xlab="x",ylab="y")
+# 
+# axis(1, at = c(0, 10, 20, 30), labels = c(0, 10, 20, 30))
+# axis(2, at = seq(0, 40, by = 10), labels = seq(0, 40, by = 10))
+# legend(img_smooth)
 
 ```
 
@@ -450,6 +521,56 @@ diet_tab_list <- setNames(
 
 ## taxid > Famille/Genre/Espèce
 
+```{r}
+# taxid_FGE_col <-function(data){
+#   tax_table <- tax_name(
+#     data$taxid,
+#     get = c("family","genus","species"),
+#     db = "ncbi",
+#     ask = FALSE
+#     )
+#   final <- bind_cols(data, tax_table)
+#   final
+# }
+
+# install.packages("taxize")
+library(taxize)
+library(purrr)
+library(dplyr)
+library(stringr)
+
+# Take all unique taxid from clean genet data
+all_unique_taxid <- c(29695,29695)#unique(diet_data_GH)
+
+############ finir la all_unique
+
+# from taxid import full path
+taxo <- classification(all_unique_taxid, "ncbi")
+
+# Take the rank name for a give rank
+get_rank <- function(x, rank) {
+  val <- x$name[x$rank == rank]
+  if(length(val) == 0) NA else val
+}
+
+# Import F, G, s from taxo thanks to get.rank()
+tax_table <- map_dfr(taxo, ~tibble(
+  family  = get_rank(.x, "family"),
+  genus   = get_rank(.x, "genus"),
+  species = get_rank(.x, "species"),
+  taxid = all_unique_taxid ############## éviter la réplication
+))
+
+# remove the genus from the specie
+tax_table$species <- word(tax_table$species, 2)
+
+# Join genet and FGs by taxID
+ref_taxid <- left_join(all_unique_taxid, tax_table, by = "taxid") 
+################## vérifier que c'est la fonction adaptée
+
+```
+
+
 ## Functions
 
 ### Export species count table
@@ -505,7 +626,7 @@ data_samples <- read.table(
 ```
 
 ```{r}
-
+# 
 Add_x_y <- function(df_genet_pcr){
   df_genet_x_y <- df_genet_pcr %>%
     left_join(data_samples$x,key="pcr") %>%
@@ -516,24 +637,43 @@ Add_x_y <- function(df_genet_pcr){
 ```
 
 
-# Modèle Pipline
+# Model Pipline
 
 ```{r}
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
 
-# For one Genus
-Level = "genus"
+# Import Data
+#load("~/Bureau/ADNe_Nourague_2026/.RData")
+path <- "/home/jean/Bureau/ADNe_Nourague_2026/"
+file <- "Nour_2012.csv"
+bota <- read.csv(paste0(path,file),sep = ",",dec = ".")
+
+# Select data
+Level = "Genus" # change to low case for genetical !
 Name = "Eschweilera"
+bota_focus <- select_tax(bota, Level, Name)
 
 # Apply Bota Model
-R_pixel = 10
+R_pixel = 15
 ## Density grid
+grid <- make_density_grid(bota_focus, R_pixel)
+p1 <- plot_grid(grid,"count") + 
+  labs(title = "Density grid with R=15")
 ## Gaussian filter
-## Bota result
+img <- col_to_img(grid$count) # to image
+img_smooth <- isoblur(img, sigma = 2) # sigma ? # Neumann boundary condition (default)
+grid_smooth <- img_to_col(img_smooth) # to grid
+p2 <- plot_grid(grid_smooth,"val") + 
+  labs(title = "Gaussian filter")
+# Result Bota
+grid.arrange(p1, p2, ncol = 2)
 
 # Apply Genet Model
 ## Import selected data
 ## Join x/y coordinate
-## Genet result
+## Result Genet
 
 # Compare results
 
