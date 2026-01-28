@@ -51,7 +51,8 @@ PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
 
 import_bota <- function(){
   # Import CSV
-  bota <- read.csv(paste0(PROJECT_PATH,"Nour_2012.csv"),sep = ",",dec = ".")
+  bota <- read.csv(paste0(PROJECT_PATH,"Nour_2012.csv"),sep = ",",dec = ".") %>%
+    mutate(Species = paste(Genus, Species, sep=" "))
   # Return
   bota
 }
@@ -156,6 +157,7 @@ make_density_grid <- function(bota_focus, R){
   # - R the radius of count around the pixel position
   # Do :
   # - Create the doublet (x,y)
+  # - Add indices (i,j)
   # - Add the density to the doublet
   # Return :
   # - The density grid in a triplet (x, y, density)
@@ -165,6 +167,9 @@ make_density_grid <- function(bota_focus, R){
     x = seq(10,300,10), # X position of samples
     y = seq(10,400,10) # Y position of samples
     )
+  # Add indices
+  grid$i <- grid$x / 10
+  grid$j <- grid$y / 10
   
   # Add the density to the doublet (x,y)
   grid$density <- pmap_int( # Apply a function to each coordinates (x,y)
@@ -514,69 +519,54 @@ On ne peux pas différencier par arbre, mais par cluster. Un même cluster peux 
 
 # Analyse Interaction entre Plantes
 
-```{r}
-# Génération de la grille
-i <- seq(1:30)
-j <- seq(1:40)
-grid <- expand.grid(i=i, j=j,
-                            Bagassa=0,
-                            Dicorynia=0) %>%
-  mutate(
-    x=5+10*(i-1),
-    y=5+10*(j-1)
-  )
+## Plot
 
+```{r}
 # Select species
-Specie_focus_1 <- c("Bagassa","guianensis")
-bota_focus_1 <- bota[bota$Genus == Specie_focus_1[1] & bota$Species == Specie_focus_1[2],]
-Specie_focus_2 <- c("Dicorynia","guianensis")
-bota_focus_2 <- bota[bota$Genus == Specie_focus_2[1] & bota$Species == Specie_focus_2[2],]
+bota_focus_1 <- select_tax(bota,"Species","Bagassa guianensis")
+bota_focus_2 <- select_tax(bota,"Species","Dicorynia guianensis")
 
 # Passage en densité
 # Bagassa
-grid$BAG_vingt <- purrr::map_int(seq_len(nrow(grid)), \(i)
-  sum((grid$x[i]-bota_focus_1$x)^2 + (grid$y[i]-bota_focus_1$y)^2 <= 20^2)
-)
+grid_BAG <- make_density_grid(bota_focus_1, 20)
 # Dicorynia
-grid$DIC_vingt <- purrr::map_int(seq_len(nrow(grid)), \(i)
-  sum((grid$x[i]-bota_focus_2$x)^2 + (grid$y[i]-bota_focus_2$y)^2 <= 20^2)
-)
+grid_DIC <- make_density_grid(bota_focus_2, 20)
 
 # Plot
 
-p1 <- ggplot(grid, aes(x = x, y = y)) +
-  # espèce 1 (orange)
-  geom_tile(aes(fill = BAG_vingt), alpha = 0.5) +
-  scale_fill_gradient(low = "white", high = "orange", limits = c(0, max(grid$BAG_vingt)))+
+p1 <- ggplot(grid_BAG, aes(x = x, y = y)) + # espèce 1 (orange)
+  geom_tile(aes(fill = density), alpha = 0.5)+
+  scale_fill_gradient(low = "white", high = "orange", limits = c(0, max(grid_BAG$density))) +
   geom_point(shape = 3, size = 0.5, col = "black") +
-  theme_minimal()
+  theme_minimal() +
+  coord_fixed()
 
-p2 <- ggplot(grid, aes(x = x, y = y)) +
-  # espèce 2 (bleu)
-  geom_tile(aes(fill = DIC_vingt), alpha = 0.5) +
-  scale_fill_gradient(low = "white", high = "blue", limits = c(0, max(grid$DIC_vingt)))+
+p2 <- ggplot(grid_DIC, aes(x = x, y = y)) + # espèce 2 (bleu)
+  geom_tile(aes(fill = density), alpha = 0.5) +
+  scale_fill_gradient(low = "white", high = "blue", limits = c(0, max(grid_DIC$density)))+
   geom_point(shape = 3, size = 0.5, col = "black") +
-  theme_minimal()
+  theme_minimal() +
+  coord_fixed()
  
 grid.arrange(p1, p2, ncol = 2)
 ```
 
+## Analyse Intertype
+
 ```{r}
 
-# Analyse intertype
-
 # 1. Créer un objet ppp pour les deux types
-xrange <- range(c(bota_focus_1$x, bota_focus_2$x))
-yrange <- range(c(bota_focus_1$y, bota_focus_2$y))
+xrange <- range(c(grid_BAG$i, grid_DIC$i))
+yrange <- range(c(grid_BAG$j, grid_DIC$j))
 window <- owin(xrange, yrange)
 
 # Créer les points avec marquage
 pp <- ppp(
-  x = c(bota_focus_1$x, bota_focus_2$x),
-  y = c(bota_focus_1$y, bota_focus_2$y),
+  x = c(grid_BAG$i, grid_DIC$i),
+  y = c(grid_BAG$j, grid_DIC$j),
   window = window,
-  marks = factor(c(rep("type1", nrow(bota_focus_1)),
-                   rep("type2", nrow(bota_focus_2))))
+  marks = factor(c(rep("type1", nrow(grid_BAG)),
+                   rep("type2", nrow(grid_DIC))))
 )
 
 # 2. Calculer la fonction K-cross
@@ -585,13 +575,12 @@ Kc <- Kcross(pp, "type1", "type2")
 # 3. Calculer la L-cross
 Lc <- Lcross(pp, "type1", "type2")
 
-# 4. Tracer
+# 4. Display
 plot(Lc, main = "Analyse intertype Attraction/Répulsion")
 
-
-
-
 ```
+
+## Confidence interval
 
 ```{r}
 envelope_result <- envelope(
