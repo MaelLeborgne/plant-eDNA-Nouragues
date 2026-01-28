@@ -11,33 +11,84 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Library
+
+```{r}
+library(tidyverse) # %>%
+library(ggplot2) # Plot
+library(gridExtra) # Arrange plots
+
+library(tibble) # Tibble class
+library(stringr) # Work on string
+
+library(imager) # For gaussian filter
+
+library(spatstat) # Analyse intertype (Ripley)
+
+library(ROBIFastread) # Read fasta
+# install.packages("remotes")
+# remotes::install_github("metabarcoding/robifastread")
+
+library(vegan) # toujour utile ?
+library(magrittr) # toujour utile ?
+library(dplyr) # toujour utile ?
+library(jsonify) # toujour utile ?
+
+library(Matrix) # output of OBITool
+
+library(taxize) # taxid and NCBI
+
+PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
+
+```
+
 # Modèle Botanique
 
 ## Data Importation
 
 ```{r}
-library(tidyverse)
-library(ggplot2)
 
-path <- "/home/jean/Bureau/ADNe_Nourague_2026/"
-file <- "Nour_2012.csv"
-bota <- read.csv(paste0(path,file),sep = ",",dec = ".")
+import_bota <- function(){
+  # Import CSV
+  bota <- read.csv(paste0(PROJECT_PATH,"Nour_2012.csv"),sep = ",",dec = ".")
+  # Return
+  bota
+}
 
-#load("~/Bureau/ADNe_Nourague_2026/.RData")
+# # Test
+# bota <-import_bota()
+
 ```
 
 ## Map Xfield / Yfield
 
 ```{r}
 
-ggplot(data = bota_focus, aes(x = Xfield, y = Yfield)) +
-  geom_point(
-    aes(color = Genus, size = CircCorr),
-    shape = 21,       # Cercle (21–25 permettent un remplissage)
-    fill = NA,        # Creux (pas de remplissage)
-    stroke = 1        # Épaisseur du contour
-  ) + theme(legend.position = "none") +
-    theme_minimal()
+plot_bota <- function(df, taxa_rank){
+  # take :  
+  # - a botanical dataframe, 
+  # - a rank of taxa for coloration
+  # return :
+  # - the plot of stems
+  
+  # Create plot
+  p <- ggplot(data = df, aes(x = Xfield, y = Yfield)) +
+    geom_point(
+      aes(color = data[[taxa_rank]], size = CircCorr),
+      shape = 21,       # Cercle (21–25 permettent un remplissage)
+      fill = NA,        # Creux (pas de remplissage)
+      stroke = 1        # Épaisseur du contour
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+  
+  # Return the plot
+  p
+}
+
+# # Test of the function
+# p0 <- plot_bota(bota,"Family")
+# p0
 
 ```
 
@@ -48,19 +99,14 @@ ggplot(data = bota_focus, aes(x = Xfield, y = Yfield)) +
 ```{r}
 
 select_tax <- function(Data, Level, Name){
+  # Select the focus in Data
   focus <- Data[Data[Level] == Name,]
+  # Return
   focus
 }
 
-# # Select Familly
-# unique(bota$Familly)
-# Familly_focus = "Fabaceae"
-# bota_focus <- bota[bota$Family == Familly_focus,]
-
-# # Select Genus
-# #unique(bota$Genus)
-# Genus_focus = "Eschweilera" # "Bagassa" "Eschweilera" "Eperua" "Pterocarpus" "Goupia" "Annona" "Ficus" "Garcinia" "Albizia" "Carapa" "Dicorynia" "Vouacapoua" "Qualea" "Inga" "Hevea" "Cecropia" "Anacardium"
-# bota_focus <- bota[bota$Genus == Genus_focus,]
+# # Test function
+# bota_focus <- select_tax(bota, "Family", "Fabaceae")
 
 ```
 
@@ -68,18 +114,25 @@ select_tax <- function(Data, Level, Name){
 
 ```{r}
 
+# 3 functions :
+
 normalization <- function(count) {
+  # Normalisation of count column
   density <-  count / sum(count)
+  # Return density column
   density
 }
 
 make_density_grid <- function(bota_focus, R){
-  # Function wich : 
-  # - Take bota dataframe
+  # Take : 
+  # - bota_focus dataframe (Xfield, Yfield)
+  # - R the radius of count around the pixel position
+  # Do :
   # - Count the number of trees in a circle of radius R (pythagore)
-  # - Return the density grid
+  # Return :
+  # - The density grid in a triplet (x, y, density)
   
-  # Generate the grid (vector with coordiates)
+  # Generate the grid (doublet)
   grid <- expand.grid(
     x = seq(10,300,10), # X position of samples
     y = seq(10,400,10) # Y position of samples
@@ -90,7 +143,7 @@ make_density_grid <- function(bota_focus, R){
   \(x, y) sum((x - bota_focus$Xfield)^2 + # Count TRUE ...
               (y - bota_focus$Yfield)^2 <= R^2, # ... on Pytagore condition (dx²-dy² <= R²)
               na.rm = TRUE)
-  ) %>% normalization() # Then convert all count to density
+  ) %>% normalization() # Convert count to density
   
   # Return the grid
   grid
@@ -114,73 +167,44 @@ plot_grid <- function(grid, col_name){
   p
 }
 
-
-
-# # Fonction de comptage
-# count_R <- function(grid, bota, R) {
-#   # grid : position x et y des point de reférence
-#   # bota : position x et y des plantes
-#   # R : rayon d'interaction autour de la reférence
-#   
-#   # Remplir le vecteur de densité
-#   count <- purrr::map_int(seq_len(nrow(grid)), \(i)
-#   sum((grid$x[i]-bota$Xfield)^2 + (grid$y[i]-bota$Yfield)^2 <= R^2) # Théorème de pythagore
-#   )
-#   # retourner vecteur
-#   count
-# }
-
-# # Différents périmètres de comptage
-# # 5m de rayon
-# grid$cinq <- count_R(grid, bota_focus, 5) %>% normalization()
-# # 10m de rayon
-# grid$dix <- count_R(grid, bota_focus, 10) %>% normalization()
-# # 15m de rayon
-# grid$quinze <- count_R(grid, bota_focus, 15) %>% normalization()
-# # 20m de rayon
-# grid$vingt <- count_R(grid, bota_focus, 20) %>% normalization()
-
 ```
 
 ### Plot plusieurs rayons
 
 ```{r}
 
-library(tidyr)
-library(ggplot2)
+plot_4_R <- function(){
+  # Plots
+  p1 <- make_density_grid(bota_focus,5) %>%
+    plot_grid("density")+
+    labs(title = "r = 5")
+  
+  p2 <- make_density_grid(bota_focus,10) %>%
+    plot_grid("density")+
+    labs(title = "r = 10")
+  
+  p3 <- make_density_grid(bota_focus,15) %>%
+    plot_grid("density")+
+    labs(title = "r = 15")
+  
+  p4 <- make_density_grid(bota_focus,20) %>%
+    plot_grid("density")+
+    labs(title = "r = 20")
+  
+  # Plot
+  grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
+}
 
-grid_long <- grid |>
-  pivot_longer(
-    cols = c(cinq, dix, quinze, vingt),
-    names_to = "rayon",
-    values_to = "count"
-  )
+# # Test
+# plot_4_R()
 
-grid_long$rayon <- factor(
-  grid_long$rayon,
-  levels = c("cinq", "dix", "quinze", "vingt"),
-  labels = c("r = 5", "r = 10", "r = 15", "r = 20")
-)
-
-ggplot(grid_long, aes(x = x, y = y)) +
-  geom_tile(aes(fill = count)) +
-  #geom_point(shape = 3, size = 0.5, col = "black") +
-  scale_fill_gradient(
-    low = "black",
-    high = "white"
-  ) +
-  coord_fixed() +
-  facet_wrap(~ rayon, ncol = 2) +
-  theme_minimal() +
-  labs(fill = "Densité de probabilité") 
 ```
 
-## Traitement d'image
-
-### Filtre Gaussien
+## Filtre Gaussien
 
 ```{r}
-library(imager)
+
+# 3 functions
 
 col_to_img <- function(grid_col){
   # columns / matrice
@@ -243,7 +267,9 @@ plot_grid_val <-function(grid){
 
 ```
 
-### MCMC (Metropolis Hasting) sur image smooth
+# Cluster
+
+## MCMC (Metropolis Hasting) sur image smooth
 
 ```{r}
 set.seed(123)
@@ -311,9 +337,10 @@ samples <- as.data.frame(samples) %>%
 
 ```
 
-### K_means
+## K_means
 
 ```{r}
+
 set.seed(123)  # pour reproductibilité
 
 k <- 20  # nombre de clusters souhaité
@@ -333,8 +360,8 @@ df_kmeans <- data.frame(
 ### Double plot
 
 ```{r}
-library(gridExtra)
 
+# Plot of MCMC
 p1 <- ggplot(samples, aes(x = x, y = y)) +
   geom_point(alpha = 0.2, color = "red", size = 0.5) +
   coord_fixed() +
@@ -344,6 +371,7 @@ p1 <- ggplot(samples, aes(x = x, y = y)) +
     limits = c(0, 400),
     breaks = seq(0, 400, by = 100))
 
+# Plot of clustering
 p2 <- ggplot(df_kmeans, aes(x = x, y = y, color = cluster)) +
   geom_point(alpha = 0.5, size = 0.5) +
   stat_density_2d(aes(fill = cluster, group = cluster),
@@ -364,7 +392,7 @@ grid.arrange(p1, p2, ncol = 2)
 
 On ne peux pas différencier par arbre, mais par cluster. Un même cluster peux contenir 1 gros arbre ou plusieurs petits. On fait l'hypothèse que la taille du cluster est proportionnelle à la Basal Area des arbres qui le compose.
 
-## Analyse Interaction entre Plantes
+# Analyse Interaction entre Plantes
 
 ```{r}
 # Génération de la grille
@@ -414,8 +442,6 @@ grid.arrange(p1, p2, ncol = 2)
 ```
 
 ```{r}
-
-library(spatstat)
 
 # Analyse intertype
 
@@ -468,34 +494,28 @@ plot(envelope_result,
 
 # Genetical Data
 
-## Importation
+## Data Importation
 
 ```{r}
-# install.packages("remotes")
-# remotes::install_github("metabarcoding/robifastread")
-library(ROBIFastread)
-library(vegan)
-library(magrittr)
-library(dplyr)
-library(jsonify)
-setwd("/home/jean/Bureau/Augustin_ADNe_23janv26/")
-library(tibble)
 
-import_all_genet_data <- function(){
-  # GH
+
+import_genet <- function(){
+  # Set directory
+  setwd(PROJECT_PATH)
+  
+  # GH marker
   diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
   diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
   
-  # 18S
+  # 18S marker
   diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
   diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
   
-  # ITS
+  # ITS marker
   diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
   diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
   
-  # Centralize data in Named List
-  ## complete data
+  # Centralize data in Named List (no duplication, just ref)
   diet_data_list <- setNames(
     list(diet_data_GH, # df
          diet_data_18S, 
@@ -505,7 +525,7 @@ import_all_genet_data <- function(){
 }
 
 extract_feature <- function(data,key){
-  # extract key (obiclean_weight, or other)
+  # Extract key (obiclean_weight, or other)
   # with ROBIFastread function
   # given the dataframe
   diet_mat <- extract_readcount(data, key=key)
@@ -513,20 +533,19 @@ extract_feature <- function(data,key){
   diet_mat
 }
 
-dgCMatrix_to_dataframe <-function(matrix){
-  df <- as.data.frame(summary(matrix))
-  colnames(df) <- c("i", "j", "x")
-  # Return dataframe
-  df
-}
+# dgCMatrix_to_dataframe <-function(matrix){
+#   df <- as.data.frame(summary(matrix))
+#   colnames(df) <- c("i", "j", "x")
+#   # Return dataframe
+#   df
+# }
 
 ```
 
-## taxid > Famille/Genre/Espèce
+## taxid \> Famille/Genre/Espèce
 
 ```{r}
-library(taxize)
-library(stringr)
+
 
 # Function Take the rank name for a give rank
 get_rank <- function(x, rank) {
@@ -600,26 +619,30 @@ mean_by_pcrLoc <- function(data){
 
 ```
 
+# Comparison
 
-# Model Pipline
+## Create de model env
 
 ```{r}
-library(tidyverse)
-library(ggplot2)
-library(gridExtra)
-library(Matrix)
+# Function to create the model env
+create_data_env <- function(){
+  import_bota() # Bota
+  import_genet() # Genet
+  create_taxid_ref() # Taxid
+  # Save in a file
+  save.image(file = paste0(project_path, ".ModelEnv")) 
+}
+```
 
-# Import Data
-# Botanical Data
-path <- "/home/jean/Bureau/ADNe_Nourague_2026/"
-file <- "Nour_2012.csv"
-bota <- read.csv(paste0(path,file),sep = ",",dec = ".")
-# Genetical Data
-# load("~/Bureau/ADNe_Nourague_2026/.RData")
-# load("~/Bureau/ADNe_Nourague_2026/.GenetData") # TODO
-# Taxid Ref
-# load("~/Bureau/ADNe_Nourague_2026/.TaxidRef") # TODO
-# sample_ref <- create_sample_ref()
+## Model Pipline
+
+```{r}
+
+# Create env (only the first time)
+create_data_env()
+
+# Load Bota, Genet, Taxid
+load("~/Bureau/ADNe_Nourague_2026/.ModelEnv")
 
 # Global Parameters
 Level <- "Family"
@@ -627,9 +650,9 @@ Name <- "Fabaceae"
 # Level <- "Genus"
 # Name <- "Eschweilera"
 R_pixel <- 5 # Bota count radius
-sigma <- 2 # Gaussian filter
+# sigma <- 2 # Gaussian filter
 level <- tolower(Level) # low case for genetical
-Marker <- "GH"
+Marker <- "GH" # "18S" "ITS"
 
 # Bota Model
 ## Select data
@@ -638,14 +661,16 @@ bota_focus <- select_tax(bota, Level, Name)
 grid <- make_density_grid(bota_focus, R_pixel)
 p1 <- plot_grid(grid,"density") +
   labs(title = "Density grid with R=5")
-## Gaussian filter
-img <- col_to_img(grid$count) # to image
-img_smooth <- isoblur(img, sigma = sigma) # Neumann boundary condition (default)
-grid_smooth <- img_to_col(img_smooth) # to grid
-p2 <- plot_grid(grid_smooth,"val") +
-  labs(title = "Gaussian filter")
 
-# Apply Genet Model
+# ## Gaussian filter
+# img <- col_to_img(grid$count) # to image
+# img_smooth <- isoblur(img, sigma = sigma) # Neumann boundary condition (default)
+# grid_smooth <- img_to_col(img_smooth) # to grid
+# p2 <- plot_grid(grid_smooth,"val") +
+#   labs(title = "Gaussian filter")
+
+# Genet Model
+
 ## Select marker
 genet <- diet_data_list[[Marker]]
 ## Get Familly, Gender, species cols
@@ -660,20 +685,21 @@ sample_matrix <- extract_feature(genet_focus,"obiclean_weight") %>%
 ### Dataframe
 sample_df <- sample_matrix %>% 
   as.data.frame() 
-# give colnames
+### give colnames
 sample_df$sample_id <- rownames(sample_df)
 sample_df$count <- sample_df$.
 sample_df <- sample_df %>%
   select(sample_id,count)
-# mean by sample_loc
+### mean by sample_loc
 sample_df <- sample_df %>%
   separate(sample_id, into = c("sample_loc", "sample_rep"), sep = "_") %>%
   group_by(sample_loc) %>%
   summarise("count" = mean(count))
-# Add (x,y)
+### Add (x,y)
 sample_df <- left_join(sample_df, sample_ref, by="sample_loc")
-# Normalisation
+### Normalisation
 sample_df$density <- normalization(sample_df$count)
+
 # Plot
 p3 <- plot_grid(sample_df,"density")+
   labs(title = "eDNA density")
@@ -709,8 +735,3 @@ grid.arrange(p1, p3, p4, ncol = 3)
 hist(df_compare$dens_diff)
 
 ```
-
-
-
-
-
