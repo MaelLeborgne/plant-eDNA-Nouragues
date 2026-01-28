@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse) # %>%
 library(ggplot2) # Plot
 library(gridExtra) # Arrange plots
+library(patchwork) # Modern way to arrange plots (look at Density Grid plots)
 
 library(tibble) # Tibble class
 library(stringr) # Work on string
@@ -65,10 +66,12 @@ import_bota <- function(){
 ```{r}
 
 plot_bota <- function(df, taxa_rank){
-  # take :  
+  # Take :  
   # - a botanical dataframe, 
   # - a rank of taxa for coloration
-  # return :
+  # Do :
+  # - Create plot
+  # Return :
   # - the plot of stems
   
   # Create plot
@@ -86,40 +89,64 @@ plot_bota <- function(df, taxa_rank){
   p
 }
 
-# # Test of the function
-# p0 <- plot_bota(bota,"Family")
+# # Test
+# bota <-import_bota()
+# p0 <- plot_bota(bota,"Family") # <- TEST
 # p0
 
 ```
 
-## Grille de densité (pour une famille ou un genre donné)
+## Density Grid
 
 ### Select Taxa
 
 ```{r}
 
 select_tax <- function(Data, Level, Name){
+  # Take : 
+  # - Data : the dataframe with contain Taxas
+  # - Level : The name of the column to filter
+  # - Name : The value to filter the column
+  # Do :
+  # - Select the focus in Data
+  # Return :
+  # - focus : the Data filtered
+  
   # Select the focus in Data
   focus <- Data[Data[Level] == Name,]
+  
   # Return
   focus
 }
 
-# # Test function
-# bota_focus <- select_tax(bota, "Family", "Fabaceae")
+# # Test
+# bota <-import_bota()
+# bota_focus <- select_tax(bota, "Family", "Fabaceae") # <- TEST
 
 ```
 
-### Grille de densité
+### Density grid
 
 ```{r}
 
-# 3 functions :
+# 4 functions :
+# - normalization
+# - make_density_grid
+# - plot_grid
+# - plot_hist
 
 normalization <- function(count) {
-  # Normalisation of count column
+  # Take : 
+  # - count column
+  # Do :
+  # - Normalisation of count
+  # Return :
+  # - density column
+  
+  # Normalisation
   density <-  count / sum(count)
-  # Return density column
+  
+  # Return
   density
 }
 
@@ -128,16 +155,18 @@ make_density_grid <- function(bota_focus, R){
   # - bota_focus dataframe (Xfield, Yfield)
   # - R the radius of count around the pixel position
   # Do :
-  # - Count the number of trees in a circle of radius R (pythagore)
+  # - Create the doublet (x,y)
+  # - Add the density to the doublet
   # Return :
   # - The density grid in a triplet (x, y, density)
   
-  # Generate the grid (doublet)
+  # Create the doublet (x,y)
   grid <- expand.grid(
     x = seq(10,300,10), # X position of samples
     y = seq(10,400,10) # Y position of samples
     )
   
+  # Add the density to the doublet (x,y)
   grid$density <- pmap_int( # Apply a function to each coordinates (x,y)
   list(grid$x, grid$y), # Element of iterations
   \(x, y) sum((x - bota_focus$Xfield)^2 + # Count TRUE ...
@@ -145,27 +174,59 @@ make_density_grid <- function(bota_focus, R){
               na.rm = TRUE)
   ) %>% normalization() # Convert count to density
   
-  # Return the grid
+  # Return
   grid
 }
 
 plot_grid <- function(grid, col_name){
-  # Function with return plot from grid
+  # Take :
+  # - grid : the triplet (x,y,z)
+  # - col_name : the name of column for color
+  # Do:
+  # - Create the ggplot
+  # Return :
+  # - plot
   
-  # Create the plot
+  # Create the ggplot
   p <- ggplot(grid, aes(x = x, y = y)) +
     geom_tile(aes(fill = .data[[col_name]])) + # use col_name to take the column
-    # scale_fill_gradient(
-    #   low = "black",
-    #   high = "white"
-    #   ) +
     coord_fixed() +
     theme_minimal() +
     labs(fill = "Densité")
   
-  # Return plot
+  # Return ggplot
   p
 }
+
+plot_hist <- function(grid,col_name){
+  # Take :
+  # - grid : the triplet (x,y,z)
+  # - col_name : the name of column for color
+  # Do:
+  # - Create the ggplot
+  # Return :
+  # - plot
+  
+  # Create the ggplot histogram
+  p <- ggplot(grid, aes(x = .data[[col_name]])) +
+    geom_histogram() +
+    theme_minimal()
+  
+  # Return ggplot
+  p
+}
+
+# Test
+bota <-import_bota()
+bota_focus <- select_tax(bota, "Family", "Fabaceae")
+grid <- make_density_grid(bota_focus, 10)
+p1 <- plot_grid(grid, "density") +  # <- TEST
+    labs(title = "Density grid (r=10)") # Title
+p2 <- plot_hist(grid, "density") +  # <- TEST
+    labs(title = "Histogram") # Title
+# Plot
+p1 | (p2 + plot_layout(widths = c(1)))
+
 
 ```
 
@@ -173,30 +234,38 @@ plot_grid <- function(grid, col_name){
 
 ```{r}
 
-plot_4_R <- function(){
-  # Plots
+plot_4_R <- function(bota_focus){
+  # Take :
+  # - bota_focus : selection in bota dataframe
+  # Do :
+  # - Get the 4 plots r=(5, 10, 15, 20) from density grids
+  # - Display plots
+  
+  # Get the 4 plots
   p1 <- make_density_grid(bota_focus,5) %>%
-    plot_grid("density")+
-    labs(title = "r = 5")
+    plot_grid("density") +
+    labs(title = "r = 5") # Title
   
   p2 <- make_density_grid(bota_focus,10) %>%
-    plot_grid("density")+
-    labs(title = "r = 10")
+    plot_grid("density") +
+    labs(title = "r = 10") # Title
   
   p3 <- make_density_grid(bota_focus,15) %>%
-    plot_grid("density")+
-    labs(title = "r = 15")
+    plot_grid("density") +
+    labs(title = "r = 15") # Title
   
   p4 <- make_density_grid(bota_focus,20) %>%
-    plot_grid("density")+
-    labs(title = "r = 20")
+    plot_grid("density") +
+    labs(title = "r = 20") # Title
   
-  # Plot
+  # Display plots
   grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
 }
 
 # # Test
-# plot_4_R()
+# bota <-import_bota()
+# bota_focus <- select_tax(bota, "Family", "Fabaceae")
+# plot_4_R(bota_focus) # <- TEST
 
 ```
 
@@ -204,66 +273,63 @@ plot_4_R <- function(){
 
 ```{r}
 
-# 3 functions
+# 2 functions of convertion :
+# - col_to_img
+# - img_to_col
 
-col_to_img <- function(grid_col){
-  # columns / matrice
-  mat <- matrix(grid_col, nrow = 30, ncol = 40, byrow = FALSE)
-  # matrice / image
+col_to_img <- function(z){
+  # Take :
+  # - z : the z of the grid (x,y,z)
+  # Do:
+  # - Convert (z) in matrix of size (ni,nj)
+  # - Convert matrix in image of size (ni,nj)
+  # Return :
+  # - image of imager package
+  
+  # Convert (z) in matrix of size (ni,nj)
+  mat <- matrix(z, nrow = 30, ncol = 40, byrow = FALSE)
+  
+  # Convert matrix in image of size (ni,nj)
   img <- as.cimg(mat, x=30, y=40)
-  # return image
+  
+  # Return
   img
 }
 
 img_to_col <- function(img){
-  # Create grid
+  # Take :
+  # - img : image of imager package
+  # Do:
+  # - Create the doublet (x,y)
+  # - Put image value in column (z)
+  # Return :
+  # - grid triplet (x,y,z)
+  
+  # Create the doublet (x,y)
   grid <- expand.grid(
     x = seq(10,300,10),
     y = seq(10,400,10)
     )
-  # Put image value
-  grid$val <- as.vector(img)
+  # Put image value in column (z)
+  grid$z <- as.vector(img)
   
   # Return cols
   grid
 }
 
-plot_grid_val <-function(grid){
-  p <- ggplot(grid, aes(x, y, fill = val)) +
-    geom_raster() +
-    coord_fixed()
-  # Return plot
-  p
-}
-
-# # columns / matrice
-# mat <- matrix(grid_col, nrow = 30, ncol = 40, byrow = FALSE)
-# # matrice / image
-# img <- as.cimg(mat, x=30, y=40)
-# # return image
-# img
+# # Test
+# bota <-import_bota()
+# bota_focus <- select_tax(bota, "Family", "Fabaceae")
+# grid <- make_density_grid(bota_focus, 10)
+# p1 <- plot_grid(grid, "density") +
+#   labs(title = "Raw density grid")
+# img <- col_to_img(grid$density) # <- TEST
+# img_smooth <- isoblur(img, sigma = 2) # smooth img
+# grid_smooth <- img_to_col(img_smooth) # <- TEST
+# p2 <- plot_grid(grid_smooth, "z") +
+#   labs(title = "With Gaussian filter")
 # 
-# # Flou Gaussien
-# img_smooth <- isoblur(img, sigma = 2)
-
-# # Subplot
-# par(mfcol = c(1, 2))
-# 
-# # Plot 1
-# plot(img, xlim = c(0, 30), ylim = c(0, 40),
-#      xlab="x",ylab="y")
-# 
-# axis(1, at = c(0, 10, 20, 30), labels = c(0, 10, 20, 30))
-# axis(2, at = seq(0, 40, by = 10), labels = seq(0, 40, by = 10))
-# 
-# 
-# # Plot 2
-# plot(img_smooth, xlim = c(0, 30), ylim = c(0, 40),
-#      xlab="x",ylab="y")
-# 
-# axis(1, at = c(0, 10, 20, 30), labels = c(0, 10, 20, 30))
-# axis(2, at = seq(0, 40, by = 10), labels = seq(0, 40, by = 10))
-# legend(img_smooth)
+# grid.arrange(p1, p2, ncol = 2)
 
 ```
 
@@ -272,68 +338,100 @@ plot_grid_val <-function(grid){
 ## MCMC (Metropolis Hasting) sur image smooth
 
 ```{r}
-set.seed(123)
 
-# Matrice lissée
-z <- as.matrix(img_smooth)
-
-nx <- nrow(z)
-ny <- ncol(z)
-
-# coordonnées x et y réelles
-x_vals <- seq(5, 5 + 10*(nx-1), length.out = nx)  # exemple correspondance i -> x
-y_vals <- seq(5, 5 + 10*(ny-1), length.out = ny)  # exemple correspondance j -> y
-
-# initial point (en indices)
-i <- sample(1:nx, 1)
-j <- sample(1:ny, 1)
-
-# n° itérations
-n_iter <- 10000
-samples <- matrix(NA, nrow = n_iter, ncol = 2)
-
-for(k in 1:n_iter){
+mcmc_sampling <- function(img,n_iter){
+  # Take :
+  # - img : image to sample
+  # - 
+  # Do :
+  # - Set seed
+  # - Convert img to matrix
+  # - Get size of the matrix
+  # - Get real x and y
+  # - Set initial points (indices)
+  # - Initalise samples storage
+  # - MCMC loop to fill samples
+  # Return:
+  # - samples : postions of samples (x,y)
   
-  # propose new point (continu)
-  i_new <- i + runif(1, -1, 1)  # déplacement continu
-  j_new <- j + runif(1, -1, 1)
+  # Set seed
+  set.seed(123)
   
-  # stay inside bounds
-  i_new <- max(min(i_new, nx), 1)
-  j_new <- max(min(j_new, ny), 1)
+  # Convert img to matrix
+  z <- as.matrix(img)
   
-  # interpolation bilinéaire pour obtenir z continu
-  i0 <- floor(i_new); i1 <- ceiling(i_new)
-  j0 <- floor(j_new); j1 <- ceiling(j_new)
-  di <- i_new - i0
-  dj <- j_new - j0
+  # Get size of the matrix
+  nx <- nrow(z)
+  ny <- ncol(z)
   
-  # handle edges
-  i1 <- min(i1, nx)
-  j1 <- min(j1, ny)
+  # Get real x and y
+  x_vals <- seq(10, 10*(nx-1), length.out = nx)  # exemple correspondance i -> x
+  y_vals <- seq(10, 10*(ny-1), length.out = ny)  # exemple correspondance j -> y
   
-  # bilinear interpolation
-  z_new <- (1-di)*(1-dj)*z[i0,j0] + di*(1-dj)*z[i0,j1] +
-           (1-di)*dj*z[i1,j0] + di*dj*z[i1,j1]
+  # Set initial points (indices)
+  i <- sample(1:nx, 1)
+  j <- sample(1:ny, 1)
   
-  z_current <- z[i,j]
+  # Initalise samples storage
+  samples <- matrix(NA, nrow = n_iter, ncol = 2)
   
-  # accept/reject
-  alpha <- z_new / z_current
-  if(runif(1) < alpha){
-    i <- i_new
-    j <- j_new
+  # MCMC loop to fill samples
+  for(k in 1:n_iter){
+    
+    # propose new point (continu)
+    i_new <- i + runif(1, -1, 1)  # déplacement continu
+    j_new <- j + runif(1, -1, 1)
+    
+    # stay inside bounds
+    i_new <- max(min(i_new, nx), 1)
+    j_new <- max(min(j_new, ny), 1)
+    
+    # interpolation bilinéaire pour obtenir z continu
+    i0 <- floor(i_new); i1 <- ceiling(i_new)
+    j0 <- floor(j_new); j1 <- ceiling(j_new)
+    di <- i_new - i0
+    dj <- j_new - j0
+    
+    # handle edges
+    i1 <- min(i1, nx)
+    j1 <- min(j1, ny)
+    
+    # bilinear interpolation
+    z_new <- (1-di)*(1-dj)*z[i0,j0] + di*(1-dj)*z[i0,j1] +
+             (1-di)*dj*z[i1,j0] + di*dj*z[i1,j1]
+    
+    z_current <- z[i,j]
+    
+    # accept/reject
+    alpha <- z_new / z_current
+    if(runif(1) < alpha){
+      i <- i_new
+      j <- j_new
+    }
+    
+    # stocker en coordonnées réelles
+    samples[k, ] <- c(
+      x_vals[1] + (i-1)*(x_vals[2]-x_vals[1]),
+      y_vals[1] + (j-1)*(y_vals[2]-y_vals[1])
+    )
   }
   
-  # stocker en coordonnées réelles
-  samples[k, ] <- c(
-    x_vals[1] + (i-1)*(x_vals[2]-x_vals[1]),
-    y_vals[1] + (j-1)*(y_vals[2]-y_vals[1])
-  )
+  # Rename columns
+  samples <- as.data.frame(samples) %>%
+    rename("x"="V1","y"="V2")
+  
+  # Return
+  samples
 }
 
-samples <- as.data.frame(samples) %>%
-  rename("x"="V1","y"="V2")
+# # Test
+# bota <-import_bota()
+# bota_focus <- select_tax(bota, "Family", "Fabaceae")
+# grid <- make_density_grid(bota_focus, 10)
+# img <- col_to_img(grid$count) # to image
+# img_smooth <- isoblur(img, sigma = 2) # smooth img
+# grid_smooth <- img_to_col(img_smooth) # convert to triplet
+# mcmc_samples <- mcmc_sampling(img_smooth) # <- TEST
 
 ```
 
@@ -341,28 +439,47 @@ samples <- as.data.frame(samples) %>%
 
 ```{r}
 
-set.seed(123)  # pour reproductibilité
+kmeans_clustering <- function(k, samples){
+  # Take :
+  # - k : number of clusters to create
+  # - samples : samples position (x,y)
+  # Do:
+  # - Set seed
+  # - Apply K-means function
+  # - Add labels to dataframe
+  # Return :
+  # - df_kmeans : triplet dataframe (x, y, cluster)
+  
+  # Set seed
+  set.seed(123)
+  
+  # Apply K-means function
+  kmeans_result <- kmeans(samples, centers = k, nstart = 25)  # nstart = nombre d'initialisations
+  
+  # Add labels to dataframe
+  df_kmeans <- data.frame(
+    x = samples[,1],
+    y = samples[,2],
+    cluster = factor(kmeans_result$cluster)
+  )
+  
+  # Return
+  df_kmeans
+}
 
-k <- 20  # nombre de clusters souhaité
-
-# Appliquer K-means
-kmeans_result <- kmeans(samples, centers = k, nstart = 25)  # nstart = nombre d'initialisations
-
-# Ajouter les labels au dataframe
-df_kmeans <- data.frame(
-  x = samples[,1],
-  y = samples[,2],
-  cluster = factor(kmeans_result$cluster)
-)
+# # Test
+# df_kmeans <- kmeans_clustering(20, mcmc_samples)
 
 ```
 
-### Double plot
+## Double plot (MCMC and Clustering)
 
 ```{r}
 
-# Plot of MCMC
-p1 <- ggplot(samples, aes(x = x, y = y)) +
+# Apply MCMC function
+mcmc_samples <- mcmc_sampling(img_smooth)
+# Get MCMC plot
+p1 <- ggplot(mcmc_samples, aes(x = x, y = y)) +
   geom_point(alpha = 0.2, color = "red", size = 0.5) +
   coord_fixed() +
   theme_minimal() +
@@ -371,7 +488,9 @@ p1 <- ggplot(samples, aes(x = x, y = y)) +
     limits = c(0, 400),
     breaks = seq(0, 400, by = 100))
 
-# Plot of clustering
+# Apply clustering function
+df_kmeans <- kmeans_clustering(20, mcmc_samples)
+# Get clustering plot
 p2 <- ggplot(df_kmeans, aes(x = x, y = y, color = cluster)) +
   geom_point(alpha = 0.5, size = 0.5) +
   stat_density_2d(aes(fill = cluster, group = cluster),
@@ -385,10 +504,11 @@ p2 <- ggplot(df_kmeans, aes(x = x, y = y, color = cluster)) +
     limits = c(0, 400),
     breaks = seq(0, 400, by = 100))
 
+# Plot MCMC and Clustering
 grid.arrange(p1, p2, ncol = 2)
 ```
 
-### Problème :
+**Problème:**
 
 On ne peux pas différencier par arbre, mais par cluster. Un même cluster peux contenir 1 gros arbre ou plusieurs petits. On fait l'hypothèse que la taille du cluster est proportionnelle à la Basal Area des arbres qui le compose.
 
@@ -666,7 +786,7 @@ p1 <- plot_grid(grid,"density") +
 # img <- col_to_img(grid$count) # to image
 # img_smooth <- isoblur(img, sigma = sigma) # Neumann boundary condition (default)
 # grid_smooth <- img_to_col(img_smooth) # to grid
-# p2 <- plot_grid(grid_smooth,"val") +
+# p2 <- plot_grid(grid_smooth,"z") +
 #   labs(title = "Gaussian filter")
 
 # Genet Model
