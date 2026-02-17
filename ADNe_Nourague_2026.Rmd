@@ -43,12 +43,11 @@ PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
 
 ```
 
-# Modèle Botanique
+# Import Data
 
-## Data Importation
+## Botanical Data
 
 ```{r}
-
 import_bota <- function(){
   # Import CSV
   bota <- read.csv(paste0(PROJECT_PATH,"Nour_2012.csv"),sep = ",",dec = ".") %>%
@@ -56,11 +55,114 @@ import_bota <- function(){
   # Return
   bota
 }
+```
 
-# # Test
-# bota <-import_bota()
+## Genetical Data
+
+```{r}
+import_genet <- function(){
+  # Set directory
+  setwd(PROJECT_PATH)
+  
+  # GH marker
+  diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
+  diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+  
+  # 18S marker
+  diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
+  diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+  
+  # ITS marker
+  diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
+  diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
+  
+  # Centralize data in Named List (no duplication, just ref)
+  diet_data_list <- setNames(
+    list(diet_data_GH, # df
+         diet_data_18S, 
+         diet_data_ITS), 
+    c("GH","18S","ITS") # names
+  )
+  
+  # Return
+  diet_data_list
+}
+
+extract_feature <- function(data,key){
+  # Extract key (obiclean_weight, or other)
+  # with ROBIFastread function
+  # given the dataframe
+  diet_mat <- extract_readcount(data, key=key)
+  # The result is a dgCMatrix
+  diet_mat
+}
 
 ```
+
+## taxid \> Famille/Genre/Espèce
+
+```{r}
+
+# Function Take the rank name for a give rank
+get_rank <- function(x, rank) {
+  val <- x$name[x$rank == rank]
+  if(length(val) == 0) NA else val
+}
+
+# Fonction to create taxid ref for local genet data from ncbi
+create_taxid_ref <- function(){
+  # Take all unique taxid from clean genet data
+  all_unique_taxid <- c(gene$GH$taxid, 
+                      gene$`18S`$taxid, 
+                      gene$ITS$taxid) %>% unique()
+  
+  # from unique taxid import list of full path
+  taxo <- classification(all_unique_taxid, "ncbi")
+
+  # Import F, G, s from taxo thanks to get.rank()
+  tax_table <- map_dfr(taxo, ~tibble(
+    family  = get_rank(.x, "family"),
+    genus   = get_rank(.x, "genus"),
+    species = get_rank(.x, "species")
+  ))
+  
+  # remove the genus from the specie
+  tax_table$species <- word(tax_table$species, 2) # keep the second word
+  
+  # Add taxid to FGs
+  tax_table$taxid <- all_unique_taxid
+  
+  # Return
+  tax_table
+}
+
+get_FGs <-function(data){
+  # Get Familly, Genus, species from faxid reference
+  data <- left_join(data, tax_table, by="taxid")
+  data
+}
+```
+
+## Create de model env
+
+```{r}
+
+# # Import functions
+# bota <- import_bota() # Bota
+# gene <- import_genet() # Genet
+# tax_table <- create_taxid_ref() # Taxid
+# samples_ref <- create_sample_ref() # Samples names / position
+# 
+# # Save in a file
+# base::save.image("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv")
+
+# Load Bota, Genet, Taxid
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv")
+
+```
+
+
+# Modèle Botanique
 
 ## Map Xfield / Yfield
 
@@ -270,7 +372,7 @@ plot_4_R <- function(bota_focus){
 # # Test
 # bota <-import_bota()
 # bota_focus <- select_tax(bota, "Family", "Fabaceae")
-# plot_4_R(bota_focus) # <- TEST
+plot_4_R(bota_focus) # <- TEST
 
 ```
 
@@ -436,7 +538,7 @@ mcmc_sampling <- function(img,n_iter){
 # img <- col_to_img(grid$count) # to image
 # img_smooth <- isoblur(img, sigma = 2) # smooth img
 # grid_smooth <- img_to_col(img_smooth) # convert to triplet
-# mcmc_samples <- mcmc_sampling(img_smooth) # <- TEST
+# mcmc_samples <- mcmc_sampling(img_smooth,10000) # <- TEST
 
 ```
 
@@ -481,8 +583,11 @@ kmeans_clustering <- function(k, samples){
 
 ```{r}
 
+# filtre gaussien
+img <- col_to_img(grid$density) # <- TEST
+img_smooth <- isoblur(img, sigma = 2) # smooth img
 # Apply MCMC function
-mcmc_samples <- mcmc_sampling(img_smooth)
+mcmc_samples <- mcmc_sampling(img_smooth,1000)
 # Get MCMC plot
 p1 <- ggplot(mcmc_samples, aes(x = x, y = y)) +
   geom_point(alpha = 0.2, color = "red", size = 0.5) +
@@ -603,102 +708,13 @@ plot(envelope_result,
 
 # Genetical Data
 
-## Data Importation
 
-```{r}
-
-
-import_genet <- function(){
-  # Set directory
-  setwd(PROJECT_PATH)
-  
-  # GH marker
-  diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
-  diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-  
-  # 18S marker
-  diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
-  diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-  
-  # ITS marker
-  diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
-  diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-  
-  # Centralize data in Named List (no duplication, just ref)
-  diet_data_list <- setNames(
-    list(diet_data_GH, # df
-         diet_data_18S, 
-         diet_data_ITS), 
-    c("GH","18S","ITS") # names
-  )
-}
-
-extract_feature <- function(data,key){
-  # Extract key (obiclean_weight, or other)
-  # with ROBIFastread function
-  # given the dataframe
-  diet_mat <- extract_readcount(data, key=key)
-  # The result is a dgCMatrix
-  diet_mat
-}
-
-# dgCMatrix_to_dataframe <-function(matrix){
-#   df <- as.data.frame(summary(matrix))
-#   colnames(df) <- c("i", "j", "x")
-#   # Return dataframe
-#   df
-# }
-
-```
-
-## taxid \> Famille/Genre/Espèce
-
-```{r}
-
-
-# Function Take the rank name for a give rank
-get_rank <- function(x, rank) {
-  val <- x$name[x$rank == rank]
-  if(length(val) == 0) NA else val
-}
-
-# Fonction to create taxid ref for local genet data from ncbi
-create_taxid_ref <- function(){
-  # Take all unique taxid from clean genet data
-  all_unique_taxid <- c(diet_data_GH$taxid, 
-                      diet_data_18S$taxid, 
-                      diet_data_ITS$taxid) %>% unique()
-  
-  # from unique taxid import list of full path
-  taxo <- classification(all_unique_taxid, "ncbi")
-
-  # Import F, G, s from taxo thanks to get.rank()
-  tax_table <- map_dfr(taxo, ~tibble(
-    family  = get_rank(.x, "family"),
-    genus   = get_rank(.x, "genus"),
-    species = get_rank(.x, "species")
-  ))
-  
-  # remove the genus from the specie
-  tax_table$species <- word(tax_table$species, 2) # keep the second word
-  
-  # Add taxid to FGs
-  tax_table$taxid <- all_unique_taxid
-}
-
-get_FGs <-function(data){
-  # Get Familly, Genus, species from faxid reference
-  data <- left_join(data, tax_table, by="taxid")
-  data
-}
-
-```
 
 ## Correspondance Bota/Génèt
 
 ```{r}
 
-# Ref pcr / (x,y)
+
 create_sample_ref <- function(){
   # Import physical data of samples
   data_samples <- read.table(
@@ -716,42 +732,114 @@ create_sample_ref <- function(){
   sample_ref
 }
 
-# Add x and y data genet
-Add_x_y_from_pcr <- function(samples_count){
-  data <- left_join(samples_count, pcr_ref ,by="sample_loc")
-  data
+sample_seq_count <- function(genet_focus){
+  # Take :
+  # - genet_focus : OBITools dataframe with a taxa filter
+  # Do:
+  # - Extract quantitative value for each sample in a dataframe
+  # - Sum all count sequence of each sample for the targeted taxa
+  # - Put rownames in a new column
+  # Return :
+  # - sample_df : the doublet (sample_id, count)
+  
+  # Extract quantitative value in a matrix 
+  sample_matrix <- extract_feature(genet_focus,"obiclean_weight") 
+  
+   # Sum all count sequence of each sample for the targeted taxa
+  sample_df <- sample_matrix %>%
+    rowSums() %>% # sum
+    as.data.frame()
+  
+  # Put rownames in a new column
+  sample_df$sample_id <- rownames(sample_df)
+  sample_df$count <- sample_df$.
+  sample_df <- sample_df %>%
+    select(sample_id,count)
+  
+  # Return
+  sample_df
 }
 
-mean_by_pcrLoc <- function(data){
-  data <- left_join(data ,pcr_ref ,by="pcr_loc")
+loc_seq_count <- function(sample_df){
+  # Take :
+  # - sample_df : the doublet (sample_id, count)
+  # Do:
+  # - Mean samples count by localisation
+  # - Add (x,y) with sample_ref
+  # Return :
+  # - loc_df : the quadruplet (sample_loc, count, x, y)
+  
+  # Mean samples count by localisation
+  sample_df <- sample_df %>%
+    separate(sample_id, into = c("sample_loc", "sample_rep"), sep = "_") %>%
+    group_by(sample_loc) %>%
+    summarise("count" = mean(count))
+  
+  # Add (x,y) with sample_ref
+  loc_df <- left_join(sample_df, sample_ref, by="sample_loc")
+  
+  # Return
+  loc_df
+}
+
+select_genet <- function(diet_data_list, Marker, Level, Name){
+  # Take :
+  # - diet_data_list :
+  # - Marker :
+  # - Level :
+  # - Name :
+  # Do:
+  # - Select marker
+  # - Get Familly, Gender, species cols
+  # - Select taxa
+  # Return :
+  # - genet_focus :
+  
+  # Select marker
+  genet <- diet_data_list[[Marker]]
+  
+  # Get Familly, Gender, species cols
+  genet <- get_FGs(genet)
+  
+  # Select taxa
+  genet_focus <- select_tax(genet, level, Name) %>%
+    filter(!is.na(.data[[level]])) # col family, genus or specie
+  
+  # Return
+  genet_focus
+}
+
+make_genet_density_grid <- function(genet_focus){
+  # Take :
+  # - genet_focus :
+  # Do:
+  # - Get count of sequences by samples
+  # - Mean sample count by localisation
+  # - Normalisation
+  # Return :
+  # - loc_df :
+  
+  # Get count of sequences by samples
+  sample_df <- sample_seq_count(genet_focus)
+  
+  # Mean sample count by localisation
+  loc_df <- loc_seq_count(sample_df)
+  
+  # Normalisation
+  loc_df$density <- normalization(loc_df$count)
+  
+  # Return
+  loc_df
 }
 
 ```
 
 # Comparison
 
-## Create de model env
-
-```{r}
-# Function to create the model env
-create_data_env <- function(){
-  import_bota() # Bota
-  import_genet() # Genet
-  create_taxid_ref() # Taxid
-  # Save in a file
-  save.image(file = paste0(project_path, ".ModelEnv")) 
-}
-```
 
 ## Model Pipline
 
 ```{r}
-
-# Create env (only the first time)
-create_data_env()
-
-# Load Bota, Genet, Taxid
-load("~/Bureau/ADNe_Nourague_2026/.ModelEnv")
 
 # Global Parameters
 Level <- "Family"
@@ -768,63 +856,31 @@ Marker <- "GH" # "18S" "ITS"
 bota_focus <- select_tax(bota, Level, Name)
 ## Density grid
 grid <- make_density_grid(bota_focus, R_pixel)
+## Plot
 p1 <- plot_grid(grid,"density") +
   labs(title = "Density grid with R=5")
 
-# ## Gaussian filter
-# img <- col_to_img(grid$count) # to image
-# img_smooth <- isoblur(img, sigma = sigma) # Neumann boundary condition (default)
-# grid_smooth <- img_to_col(img_smooth) # to grid
-# p2 <- plot_grid(grid_smooth,"z") +
-#   labs(title = "Gaussian filter")
-
 # Genet Model
-
-## Select marker
-genet <- diet_data_list[[Marker]]
-## Get Familly, Gender, species cols
-genet <- get_FGs(genet)
-## Select taxa
-genet_focus <- select_tax(genet, level, Name) %>%
-  filter(!is.na(.data[[level]])) # col family, genus or specie
-## sample_name / count (for the targetted taxa)
-### Matrix
-sample_matrix <- extract_feature(genet_focus,"obiclean_weight") %>%
-  rowSums() # sum on diet_id
-### Dataframe
-sample_df <- sample_matrix %>% 
-  as.data.frame() 
-### give colnames
-sample_df$sample_id <- rownames(sample_df)
-sample_df$count <- sample_df$.
-sample_df <- sample_df %>%
-  select(sample_id,count)
-### mean by sample_loc
-sample_df <- sample_df %>%
-  separate(sample_id, into = c("sample_loc", "sample_rep"), sep = "_") %>%
-  group_by(sample_loc) %>%
-  summarise("count" = mean(count))
-### Add (x,y)
-sample_df <- left_join(sample_df, sample_ref, by="sample_loc")
-### Normalisation
-sample_df$density <- normalization(sample_df$count)
-
-# Plot
-p3 <- plot_grid(sample_df,"density")+
+## Select data
+genet_focus <- select_genet(gene, Marker, Level, Name)
+# Samples names / position
+sample_ref <- create_sample_ref()
+## Density grid
+sample_df <- make_genet_density_grid(genet_focus)
+## Plot
+p2 <- plot_grid(sample_df,"density")+
   labs(title = "eDNA density")
 
-# Compare results
-## df join
+# Compare density grids
 df_compare <- sample_df %>%
   rename(dens_genet = density) %>% # rename density
   left_join(grid, by = c("x", "y")) %>% # left join
   rename(dens_bota = density) %>% # rename density
   select(-count) %>%
-  mutate(err_abs = dens_genet - dens_bota) %>%
-  mutate(err_rel = (dens_genet - dens_bota) / dens_bota)
+  mutate(err_abs = dens_genet - dens_bota)
 
-# Create the plot
-p4 <- ggplot(df_compare, aes(x = x, y = y)) +
+# Plot Compare
+p3 <- ggplot(df_compare, aes(x = x, y = y)) +
   geom_tile(aes(fill = err_abs)) + # use col_name to take the column
   scale_fill_gradient2(
     low = "lightpink",      # valeurs négatives
@@ -838,9 +894,104 @@ p4 <- ggplot(df_compare, aes(x = x, y = y)) +
   labs(title = "Absolute error")
 
 # Results
-grid.arrange(p1, p3, p4, ncol = 3)
+grid.arrange(p1, p2, p3, ncol = 3)
 
 # Diagnostic : Justesse et précision
-hist(df_compare$dens_diff)
+hist(df_compare$err_abs)
 
 ```
+
+# Question 1 : Quel est la distance d'influence R qui permet l'erreur la plus faible ?
+
+- graph 2D : distance R / R²
+
+
+```{r}
+
+# Global Parameters
+Level <- "Family"
+Name <- "Fabaceae"
+level <- tolower(Level) # low case for genetical
+Marker <- "GH" # "18S" "ITS"
+
+# Genet Model
+## Select data
+genet_focus <- select_genet(gene, Marker, Level, Name)
+## Density grid
+sample_df <- make_genet_density_grid(genet_focus)
+
+R2_compute <- function(radius){
+  # Bota Model
+  ## Select data
+  bota_focus <- select_tax(bota, Level, Name)
+  ## Density grid
+  grid <- make_density_grid(bota_focus, radius)
+  
+  # Compare density grids
+  df_compare <- sample_df %>%
+    rename(dens_genet = density) %>% # rename density
+    left_join(grid, by = c("x", "y")) %>% # left join
+    rename(dens_bota = density) %>% # rename density
+    select(-count) %>%
+    filter(!is.na(dens_bota)) %>% # Remove NA bugs from sample_ref
+    mutate(err_abs = dens_genet - dens_bota)
+  
+  # Calcul de R^2 manuellement
+  y <- df_compare$dens_genet             # Donnée de référence
+  y_pred <- df_compare$dens_bota         # Prédictions du modèle
+  y_mean <- mean(df_compare$dens_genet)  # Moyenne des données observées
+  SS_residual <- sum((y - y_pred)^2)  # Somme des carrés des résidus
+  SS_total <- sum((y - y_mean)^2)    # Somme des carrés totaux
+  
+  # Return
+  R_squared <- 1 - (SS_residual / SS_total)
+  R_squared
+
+}
+
+# Create the summary table
+err_R_tab <- expand.grid(
+  radius = seq(5,20),
+  R2 = 0
+)
+
+# Fill the summary table
+for (i in 1:length(err_R_tab$radius)) {
+  print(R2_compute(err_R_tab$radius[i]))
+  err_R_tab$R2[i] <- R2_compute(err_R_tab$radius[i])
+}
+
+
+ggplot(err_R_tab,aes(x = radius, y = R2)) +
+  geom_point() +
+  theme_minimal()
+
+
+```
+
+## Move grid from 3D to 2D diagnostic
+
+```{r}
+
+ggplot(df_compare,aes(x = dens_genet, y = dens_bota)) +
+  geom_point() +
+  theme_minimal()
+
+
+```
+
+
+# Hypothèses 1 : L'étendu du signal ADNe est positivement corrélé à la Basal area
+
+- Pour chaque pixel, on prend la basal area des arbres dans un rayon R avec l'intensité du signal ADNe.
+
+# Question:
+
+- Avec quel précision peut-on prédir la position des arbres ? CNN ?
+
+# Bugs :
+
+- df_compare[is.na(df_compare$dens_bota)==TRUE,] : 21 sample_loc à NA x et y dans sample_ref
+
+
+
