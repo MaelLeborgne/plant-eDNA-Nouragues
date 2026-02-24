@@ -937,9 +937,9 @@ Marker <- "GH" # "18S" "ITS"
 bota_focus <- select_tax(bota, Level, Name)
 ## Density grid
 # grid <- make_density_grid(bota_focus, R_pixel) # Previous model with simple count
-grid <- bota_model_NCI(bota_focus) # New model with NCI
+bota_grid <- bota_model_NCI(bota_focus) # New model with NCI
 ## Plot
-p1 <- plot_grid(grid,"density") +
+p1 <- plot_grid(bota_grid,"density") +
   labs(title = "Bota density with R=10") + geom_point(
     data = bota_focus,
     aes(x = Xfield, y = Yfield, size = CircCorr/10),
@@ -957,9 +957,9 @@ genet_focus <- select_genet(gene, Marker, Level, Name)
 # Samples names / position
 sample_ref <- create_sample_ref()
 ## Density grid
-sample_df <- make_genet_density_grid(genet_focus) # Take too much time
+genet_grid <- make_genet_density_grid(genet_focus) # Take too much time
 ## Plot
-p2 <- plot_grid(sample_df,"density")+
+p2 <- plot_grid(genet_grid,"density")+
   labs(title = "eDNA density") + geom_point(
     data = bota_focus,
     aes(x = Xfield, y = Yfield, size = CircCorr/10),
@@ -972,10 +972,10 @@ p2 <- plot_grid(sample_df,"density")+
   )
 
 # Compare density grids
-df_compare <- sample_df %>%
+df_compare <- genet_grid %>%
   rename(dens_genet = density) %>% # rename
   rename(count_genet = count) %>% # rename
-  left_join(grid, by = c("x", "y")) %>% # left join
+  left_join(bota_grid, by = c("x", "y")) %>% # left join
   rename(dens_bota = density) %>% # rename density
   rename(count_bota = count) %>% # rename
   mutate(err_abs = dens_genet - dens_bota)
@@ -1086,12 +1086,11 @@ ggplot(err_R_tab,aes(x = radius, y = R2)) +
 
 ```
 
-## Density function : From NCI to new empirical function
+## From NCI to new empirical gaussian
 
 ```{r}
 
 # Generalized density function
-
 
 # Global Parameters
 Level <- "Family"
@@ -1103,61 +1102,105 @@ Marker <- "GH" # "18S" "ITS"
 ## Select data
 genet_focus <- select_genet(gene, Marker, Level, Name)
 ## Density grid
-sample_df <- make_genet_density_grid(genet_focus)
+genet_grid <- make_genet_density_grid(genet_focus)
 
 # Bota Model
 ## Select data
 bota_focus <- select_tax(bota, Level, Name)
 
+## Optimization of the bota model
 
+### Gaussian model for botanical grid (beta parameter)
+bota_gaussian <- function(BETA, GAMMA){
+  # Create the doublet (x,y)
+  grid <- expand.grid(
+    x = seq(10, 300, 10),
+    y = seq(10, 400, 10)
+  )
+  
+  # Add indices
+  grid$i <- grid$x / 10
+  grid$j <- grid$y / 10
+  
+  # Initialize NCI column
+  grid$count <- NA
+  
+  # Loop over rows (pixels)
+  for (pixel in 1:nrow(grid)) {
+    
+    # Coordinates of the current pixel
+    px <- grid$x[pixel]
+    py <- grid$y[pixel]
+    
+    # Euclidean distance between this pixel and all trees
+    dij <- sqrt((px - bota_focus$Xfield)^2 + 
+                (py - bota_focus$Yfield)^2)
+    
+    # Keep only trees within 20 m (excluding distance 0)
+    sel <- which(dij < 20 & dij > 0)
+    
+    if (length(sel) == 0) {
+      grid$count[pixel] <- 0
+    } else { # Compute the gaussian index
+      grid$count[pixel] <- sum( 
+        (pi*(bota_focus$CircCorr[sel]/2)^2) * # Basal Area
+        exp(-BETA * dij[sel]^GAMMA),              # Gaussian Kernel
+        na.rm = TRUE
+      )
+    }
+  }
+  
+  # Convert NCI to density
+  grid$density <- grid$count %>% normalization()
+  
+  # Return
+  grid
+}
 
-# Optimization of the bota model (Basal area * decreas with 2 parameters)
-
-# Surface terrière des arbres
-A <- pi * (DBH / 2)^2
-
-# Fonction to minimize
-rss_function <- function(par, ADNe_obs, A, D) {
-  # Parameters
-  beta  <- par[1]
+### Fonction to minimize
+rss_function <- function(par, ADNe_obs) {
+  # Prameters
+  beta <- par[1]
   gamma <- par[2]
   
   # Prediction
-  pred <- rowSums( A * exp(-beta * D^gamma) )
+  bota_grid <- bota_gaussian(beta, gamma)
   
   # Residuals
-  resid <- ADNe_obs - pred
+  resid <- ADNe_obs - bota_grid$density
   
   # RSS
+  print(sum(resid^2))
+  print(beta)
   sum(resid^2)
 }
-# Boot Optimization
+
+### Launch Optimization
 res <- optim(
-  par = c(0.2, 1), 
+  par = c(0.2,1), 
   fn = rss_function,
-  ADNe_obs = ADNe_obs,
-  A = A,
-  D = D,
+  ADNe_obs = genet_grid$density,
   method = "L-BFGS-B",
-  lower = c(0, 0)  # contraintes biologiquement logiques
+  lower = c(0,0),  # logical constraint (biological)
 )
-# Results
+
+### Result : Parameter
 res$par
-# Compute r-squared
-beta_opt  <- res$par[1]
-gamma_opt <- res$par[2]
 
-pred <- rowSums( A * exp(-beta_opt * D^gamma_opt) )
+# # Generate gaussian bota model
+# bota_grid <- bota_gaussian(0.01859806,0.95582466)
+# plot_grid(bota_grid,"density")
+# 
+# # R2
+# obs <- genet_grid$density
+# pred <- bota_grid$density
+# 
+# RSS <- sum((obs - pred)^2)
+# TSS <- sum((obs - mean(obs))^2)
+# 
+# R2 <- 1 - RSS/TSS
+# R2
 
-RSS <- sum((ADNe_obs - pred)^2)
-TSS <- sum((ADNe_obs - mean(ADNe_obs))^2)
-
-R2 <- 1 - RSS/TSS
-R2
-
-
-# ## Density grid
-# grid <- bota_model_test(bota_focus)
 
 
 ```
@@ -1166,6 +1209,16 @@ R2
 ## Move grid from 3D to 2D diagnostic
 
 ```{r}
+
+bota_grid <- bota_model_NCI(bota_focus)
+
+# Compare density grids
+df_compare <- genet_grid %>%
+  rename(dens_genet = density) %>% # rename
+  rename(count_genet = count) %>% # rename
+  left_join(bota_grid, by = c("x", "y")) %>% # left join
+  rename(dens_bota = density) %>% # rename density
+  rename(count_bota = count) # rename
 
 ggplot(df_compare,aes(x = count_genet, y = count_bota)) +
   geom_point() +
@@ -1202,51 +1255,6 @@ ggplot(df_filtered) +
 ```
 
 
-
-# Hypothèses 1 : L'étendu du signal ADNe est positivement corrélé à la Basal area
-
-- Pour chaque pixel, on prend la basal area des arbres dans un rayon R avec l'intensité du signal ADNe.
-
-```{r}
-
-
-add_grid_BA <- function(grid, bota_focus, R){
-  # Take : 
-  # - The density grid (x, y, density, count)
-  
-  # Do :
-  # Pour chaque pixel
-  # selectionner les arbres dans un rayon R autour du pixel
-  # calculer la BA
-  # sommer
-  # Return :
-  # - BA column
-  
-  # selectionner les arbres dans un rayon R autour du pixel
-  # calculer la BA
-  # sommer
-  BA <- pmap_int( # Apply a function to each coordinates (x,y)
-  list(grid$x, grid$y), # Element of iterations
-  # \(x, y) sum((x - bota_focus$Xfield)^2 + # Count TRUE ...
-  #             (y - bota_focus$Yfield)^2 <= R^2, # ... on Pytagore condition (dx²-dy² <= R²)
-  #             na.rm = TRUE)
-  # )
-  
-  # Return
-  grid
-}
-
-# Assigner à la colonne df_compare$BA
-df_compare$BA <- make_BA_grid(grid, bota_focus, radius)
-
-
-```
-
-
-
-# Question:
-
-- Avec quel précision peut-on prédir la position des arbres ? CNN ?
 
 # Bugs :
 
