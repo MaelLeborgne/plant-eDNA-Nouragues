@@ -156,7 +156,7 @@ get_FGs <-function(data){
 # # Save in a file
 # base::save.image("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv")
 
-# Load Bota, Genet, Taxid
+# # Load Bota, Genet, Taxid
 # load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv")
 
 ```
@@ -235,6 +235,7 @@ select_tax <- function(Data, Level, Name){
 # 4 functions :
 # - normalization
 # - make_density_grid
+# - bota_model_NCI
 # - plot_grid
 # - plot_hist
 
@@ -260,7 +261,8 @@ make_density_grid <- function(bota_focus, R){
   # Do :
   # - Create the doublet (x,y)
   # - Add indices (i,j)
-  # - Add the density to the doublet
+  # - Count the number of trees around each pixels in a circle of radius R
+  # - Convert count to density
   # Return :
   # - The density grid in a triplet (x, y, density)
   
@@ -273,17 +275,95 @@ make_density_grid <- function(bota_focus, R){
   grid$i <- grid$x / 10
   grid$j <- grid$y / 10
   
-  # Add the density to the doublet (x,y)
-  grid$density <- pmap_int( # Apply a function to each coordinates (x,y)
+  # Count the number of trees around each pixels in a circle of radius R
+  grid$count <- pmap_int( # Apply a function to each coordinates (x,y)
   list(grid$x, grid$y), # Element of iterations
   \(x, y) sum((x - bota_focus$Xfield)^2 + # Count TRUE ...
               (y - bota_focus$Yfield)^2 <= R^2, # ... on Pytagore condition (dx²-dy² <= R²)
               na.rm = TRUE)
-  ) %>% normalization() # Convert count to density
+  )
+  
+  # Convert count to density
+  grid$density <- grid$count %>% normalization()
   
   # Return
   grid
 }
+
+bota_model_NCI <- function(bota_focus){
+  # Take : 
+  # - bota_focus dataframe (Xfield, Yfield)
+  # Do :
+  # - Create the doublet (x,y)
+  # - Add indices (i,j)
+  # - Euclidean distance between this pixel and all trees (dij)
+  # - Keep only trees within 20 m (excluding distance 0)
+  # - Compute the NCI
+  # - Convert it to density
+  # Return :
+  # - The density grid in cols (x, y, i, j, NCI,density)
+  
+  # Create the doublet (x,y)
+  grid <- expand.grid(
+    x = seq(10, 300, 10),
+    y = seq(10, 400, 10)
+  )
+  
+  # Add indices
+  grid$i <- grid$x / 10
+  grid$j <- grid$y / 10
+  
+  # Initialize NCI column
+  grid$count <- NA
+  
+  # Loop over rows (pixels)
+  for (pixel in 1:nrow(grid)) {
+    
+    # Coordinates of the current pixel
+    px <- grid$x[pixel]
+    py <- grid$y[pixel]
+    
+    # Euclidean distance between this pixel and all trees
+    dij <- sqrt((px - bota_focus$Xfield)^2 + 
+                (py - bota_focus$Yfield)^2)
+    
+    # Keep only trees within 20 m (excluding distance 0)
+    sel <- which(dij < 20 & dij > 0)
+    
+    if (length(sel) == 0) {
+      grid$count[pixel] <- 0
+    } else { # Compute the NCI
+      grid$count[pixel] <- sum( 
+        (bota_focus$CircCorr[sel]^2) * 
+        exp(-0.25 * dij[sel]),
+        na.rm = TRUE
+      )
+    }
+  }
+  
+  # Convert NCI to density
+  grid$density <- grid$count %>% normalization()
+  
+  # Return
+  grid
+}
+  
+  ## First commpute the distance
+  grid$dij <- pmap_int( # Apply a function to each coordinates (x,y)
+    list(grid$x, grid$y), # Element of iterations
+    \(x, y) sqrt((x - bota_focus$Xfield)^2 + 
+                 (y - bota_focus$Yfield)^2) # Euclidian distance between trees and center of pixels
+  )
+  
+  ## Keep only tree in 20m around
+  sel <- which(grid$dij < 20 & grid$dij > 0)
+    if (length(sel) == 0) { # Management of empty pixels
+      grid$NCI <- 0
+    } else { # Calcul of the Neighboor competition index
+      grid$NCI <- sum((bota_focus$CircCorr[sel]^2) * exp(-0.25 * grid$dij[sel]), na.rm = TRUE)
+    }
+  
+
 
 plot_grid <- function(grid, col_name){
   # Take :
@@ -326,7 +406,8 @@ plot_hist <- function(grid,col_name){
 # Test
 bota <-import_bota()
 bota_focus <- select_tax(bota, "Family", "Fabaceae")
-grid <- make_density_grid(bota_focus, 10)
+#grid <- make_density_grid(bota_focus, 10)
+grid <- bota_model_NCI(bota_focus)
 p1 <- plot_grid(grid, "density") +  # <- TEST
     labs(title = "Density grid (r=10)") # Title
 p2 <- plot_hist(grid, "density") +  # <- TEST
@@ -334,8 +415,8 @@ p2 <- plot_hist(grid, "density") +  # <- TEST
 # Plot
 p1 | (p2 + plot_layout(widths = c(1)))
 
-
 ```
+
 
 ### Plot plusieurs rayons
 
@@ -531,14 +612,14 @@ mcmc_sampling <- function(img,n_iter){
   samples
 }
 
-# # Test
-# bota <-import_bota()
-# bota_focus <- select_tax(bota, "Family", "Fabaceae")
-# grid <- make_density_grid(bota_focus, 10)
-# img <- col_to_img(grid$count) # to image
-# img_smooth <- isoblur(img, sigma = 2) # smooth img
-# grid_smooth <- img_to_col(img_smooth) # convert to triplet
-# mcmc_samples <- mcmc_sampling(img_smooth,10000) # <- TEST
+# Test
+bota <-import_bota()
+bota_focus <- select_tax(bota, "Family", "Fabaceae")
+grid <- make_density_grid(bota_focus, 10)
+img <- col_to_img(grid$count) # to image
+img_smooth <- isoblur(img, sigma = 2) # smooth img
+grid_smooth <- img_to_col(img_smooth) # convert to triplet
+mcmc_samples <- mcmc_sampling(img_smooth,10000) # <- TEST
 
 ```
 
@@ -718,7 +799,7 @@ plot(envelope_result,
 create_sample_ref <- function(){
   # Import physical data of samples
   data_samples <- read.table(
-    "/home/jean/Bureau/doi_10_5061_dryad_dc28m__v20181029/Zinger_et_al_metabar_PP1_samples.txt",
+    "/home/jean/Bureau/2026_Stage_ADNe/doi_10_5061_dryad_dc28m__v20181029/Zinger_et_al_metabar_PP1_samples.txt",
     header = TRUE,
     comment.char = "#"
   )
@@ -846,7 +927,7 @@ Level <- "Family"
 Name <- "Fabaceae"
 # Level <- "Genus"
 # Name <- "Eschweilera"
-R_pixel <- 5 # Bota count radius
+R_pixel <- 10 # Bota count radius
 # sigma <- 2 # Gaussian filter
 level <- tolower(Level) # low case for genetical
 Marker <- "GH" # "18S" "ITS"
@@ -855,10 +936,20 @@ Marker <- "GH" # "18S" "ITS"
 ## Select data
 bota_focus <- select_tax(bota, Level, Name)
 ## Density grid
-grid <- make_density_grid(bota_focus, R_pixel)
+# grid <- make_density_grid(bota_focus, R_pixel) # Previous model with simple count
+grid <- bota_model_NCI(bota_focus) # New model with NCI
 ## Plot
 p1 <- plot_grid(grid,"density") +
-  labs(title = "Density grid with R=5")
+  labs(title = "Bota density with R=10") + geom_point(
+    data = bota_focus,
+    aes(x = Xfield, y = Yfield, size = CircCorr/10),
+    shape = 21,     # cercle avec contour
+    fill = NA,      # pas de remplissage (creux)
+    stroke = 1      # épaisseur du contour
+  ) +
+  theme(
+    text = element_text(size = 18)  # Augmente la taille de tout le texte
+  )
 
 # Genet Model
 ## Select data
@@ -866,44 +957,64 @@ genet_focus <- select_genet(gene, Marker, Level, Name)
 # Samples names / position
 sample_ref <- create_sample_ref()
 ## Density grid
-sample_df <- make_genet_density_grid(genet_focus)
+sample_df <- make_genet_density_grid(genet_focus) # Take too much time
 ## Plot
 p2 <- plot_grid(sample_df,"density")+
-  labs(title = "eDNA density")
+  labs(title = "eDNA density") + geom_point(
+    data = bota_focus,
+    aes(x = Xfield, y = Yfield, size = CircCorr/10),
+    shape = 21,     # cercle avec contour
+    fill = NA,      # pas de remplissage (creux)
+    stroke = 1      # épaisseur du contour
+  ) +
+  theme(
+    text = element_text(size = 18)  # Augmente la taille de tout le texte
+  )
 
 # Compare density grids
 df_compare <- sample_df %>%
-  rename(dens_genet = density) %>% # rename density
+  rename(dens_genet = density) %>% # rename
+  rename(count_genet = count) %>% # rename
   left_join(grid, by = c("x", "y")) %>% # left join
   rename(dens_bota = density) %>% # rename density
-  select(-count) %>%
+  rename(count_bota = count) %>% # rename
   mutate(err_abs = dens_genet - dens_bota)
 
 # Plot Compare
 p3 <- ggplot(df_compare, aes(x = x, y = y)) +
   geom_tile(aes(fill = err_abs)) + # use col_name to take the column
   scale_fill_gradient2(
-    low = "lightpink",      # valeurs négatives
+    low = "red",      # valeurs négatives
     mid = "white",    # neutre (0)
-    high = "lightgreen", # valeurs positives
+    high = "green", # valeurs positives
     midpoint = 0
   ) +
   coord_fixed() +
   theme_minimal() +
   labs(fill = "Density") +
-  labs(title = "Absolute error")
+  labs(title = "Absolute error") + geom_point(
+    data = bota_focus,
+    aes(x = Xfield, y = Yfield, size = CircCorr/10),
+    shape = 21,     # cercle avec contour
+    fill = NA,      # pas de remplissage (creux)
+    stroke = 1      # épaisseur du contour
+  ) +
+  theme(
+    text = element_text(size = 18)  # Augmente la taille de tout le texte
+  )
 
-# Results
-grid.arrange(p1, p2, p3, ncol = 3)
+# Results (patchwork)
+(p1 | p2 | p3) 
 
 # Diagnostic : Justesse et précision
 hist(df_compare$err_abs)
 
 ```
 
-# Question 1 : Quel est la distance d'influence R qui permet l'erreur la plus faible ?
 
-- graph 2D : distance R / R²
+# Diganostic
+
+## Simple count : R-squared / radius of count
 
 
 ```{r}
@@ -932,7 +1043,6 @@ R2_compute <- function(radius){
     rename(dens_genet = density) %>% # rename density
     left_join(grid, by = c("x", "y")) %>% # left join
     rename(dens_bota = density) %>% # rename density
-    select(-count) %>%
     filter(!is.na(dens_bota)) %>% # Remove NA bugs from sample_ref
     mutate(err_abs = dens_genet - dens_bota)
   
@@ -964,26 +1074,175 @@ for (i in 1:length(err_R_tab$radius)) {
 
 ggplot(err_R_tab,aes(x = radius, y = R2)) +
   geom_point() +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "gray"),  # Lignes des axes en noir
+    axis.text = element_text(color = "black"),  # Texte des axes en noir
+    axis.ticks = element_line(color = "black")  # Ticks des axes en noir
+  ) + 
+  labs(x = "Radius count (m)",
+       y = "R-squared")
 
 
 ```
+
+## Density function : From NCI to new empirical function
+
+```{r}
+
+# Generalized density function
+
+
+# Global Parameters
+Level <- "Family"
+Name <- "Fabaceae"
+level <- tolower(Level) # low case for genetical
+Marker <- "GH" # "18S" "ITS"
+
+# Genet Model
+## Select data
+genet_focus <- select_genet(gene, Marker, Level, Name)
+## Density grid
+sample_df <- make_genet_density_grid(genet_focus)
+
+# Bota Model
+## Select data
+bota_focus <- select_tax(bota, Level, Name)
+
+
+
+# Optimization of the bota model (Basal area * decreas with 2 parameters)
+
+# Surface terrière des arbres
+A <- pi * (DBH / 2)^2
+
+# Fonction to minimize
+rss_function <- function(par, ADNe_obs, A, D) {
+  # Parameters
+  beta  <- par[1]
+  gamma <- par[2]
+  
+  # Prediction
+  pred <- rowSums( A * exp(-beta * D^gamma) )
+  
+  # Residuals
+  resid <- ADNe_obs - pred
+  
+  # RSS
+  sum(resid^2)
+}
+# Boot Optimization
+res <- optim(
+  par = c(0.2, 1), 
+  fn = rss_function,
+  ADNe_obs = ADNe_obs,
+  A = A,
+  D = D,
+  method = "L-BFGS-B",
+  lower = c(0, 0)  # contraintes biologiquement logiques
+)
+# Results
+res$par
+# Compute r-squared
+beta_opt  <- res$par[1]
+gamma_opt <- res$par[2]
+
+pred <- rowSums( A * exp(-beta_opt * D^gamma_opt) )
+
+RSS <- sum((ADNe_obs - pred)^2)
+TSS <- sum((ADNe_obs - mean(ADNe_obs))^2)
+
+R2 <- 1 - RSS/TSS
+R2
+
+
+# ## Density grid
+# grid <- bota_model_test(bota_focus)
+
+
+```
+
 
 ## Move grid from 3D to 2D diagnostic
 
 ```{r}
 
-ggplot(df_compare,aes(x = dens_genet, y = dens_bota)) +
+ggplot(df_compare,aes(x = count_genet, y = count_bota)) +
   geom_point() +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "gray"),  # Lignes des axes en noir
+    axis.text = element_text(color = "black"),  # Texte des axes en noir
+    axis.ticks = element_line(color = "black")  # Ticks des axes en noir
+  )
 
 
 ```
+
+## Noise on genetical signal
+
+```{r}
+df_filtered <- df_compare[df_compare$y==10,]
+
+ggplot(df_filtered) +
+  geom_line(aes(x = x, y = dens_genet, color = "Genet")) +
+  geom_line(aes(x = x, y = dens_bota,  color = "Bota")) +
+  scale_color_manual(
+    name = "Density grid",
+    values = c("Genet" = "black", "Bota" = "red")
+  ) +
+  theme_minimal() +
+  theme(
+    axis.line = element_line(color = "gray"),  # Lignes des axes en noir
+    axis.text = element_text(color = "black"),  # Texte des axes en noir
+    axis.ticks = element_line(color = "black")  # Ticks des axes en noir
+  ) + 
+  labs(y = "Density")
+
+```
+
 
 
 # Hypothèses 1 : L'étendu du signal ADNe est positivement corrélé à la Basal area
 
 - Pour chaque pixel, on prend la basal area des arbres dans un rayon R avec l'intensité du signal ADNe.
+
+```{r}
+
+
+add_grid_BA <- function(grid, bota_focus, R){
+  # Take : 
+  # - The density grid (x, y, density, count)
+  
+  # Do :
+  # Pour chaque pixel
+  # selectionner les arbres dans un rayon R autour du pixel
+  # calculer la BA
+  # sommer
+  # Return :
+  # - BA column
+  
+  # selectionner les arbres dans un rayon R autour du pixel
+  # calculer la BA
+  # sommer
+  BA <- pmap_int( # Apply a function to each coordinates (x,y)
+  list(grid$x, grid$y), # Element of iterations
+  # \(x, y) sum((x - bota_focus$Xfield)^2 + # Count TRUE ...
+  #             (y - bota_focus$Yfield)^2 <= R^2, # ... on Pytagore condition (dx²-dy² <= R²)
+  #             na.rm = TRUE)
+  # )
+  
+  # Return
+  grid
+}
+
+# Assigner à la colonne df_compare$BA
+df_compare$BA <- make_BA_grid(grid, bota_focus, radius)
+
+
+```
+
+
 
 # Question:
 
