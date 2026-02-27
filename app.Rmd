@@ -1,0 +1,84 @@
+---
+title: "ADNe App"
+author: "Maël"
+date: "2026-02-27"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library
+```{r}
+library(patchwork) # Arrange plots
+
+PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
+```
+
+# Data importation
+## Create env
+```{r}
+# # Import functions
+# bota <- import_bota(PROJECT_PATH) # Bota
+# gene <- import_genet(PROJECT_PATH) # Genet
+# genet_grid_write_all(PROJECT_PATH, gene)
+# tax_table <- create_taxid_ref() # Taxid
+# samples_ref <- create_sample_ref(PROJECT_PATH) # Samples names / position
+# 
+# # Save in a file
+# base::save.image("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
+```
+
+## Load env
+```{r}
+# ==== LOAD ENV ====
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv")
+```
+
+## Source files
+
+```{r}
+source("data_import.R")
+source("data_prep.R")
+source("plots.R")
+```
+
+# Pipeline : Test Quantitatif
+
+```{r}
+# ==== Global Parameters ====
+Level <- "Family"
+level <- tolower(Level) # low case for genetical
+Name <- "Fabaceae"
+R_pixel <- 10 # Bota count radius
+Marker <- "GH" # "18S" "ITS"
+
+# ====  BOTA ====
+## Select data
+bota_focus <- select_tax(bota, Level, Name)
+## Density grid
+bota_grid <- bota_grid_NCI(bota_focus) # New model with NCI
+## Plot
+p1 <- plot_grid_stem(bota_grid,"density") +
+  labs(title = "Bota density with R=10")
+
+# ====  GENET ====
+## Density grid
+genet_grid <- genet_grid_read(Marker, Level, Name)
+## Plot
+p2 <- plot_grid_stem(genet_grid,"density")+
+  labs(title = "eDNA density")
+
+# ==== COMPARE ====
+# Compare density grids
+df_compare <- df_compare_join(genet_grid, bota_grid)
+# Plot Compare
+p3 <- plot_compare(df_compare)
+
+# ==== Results ====
+(p1 | p2 | p3) 
+```
+
