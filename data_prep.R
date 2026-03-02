@@ -11,6 +11,20 @@ library(stringr) # Work on string
 
 # ===== GENERAL =====
 
+# Initialize empty grid
+ref_grid <- function(){
+  # X and Y
+  grid <- expand.grid(
+    x = seq(10, 300, 10), # X position of samples
+    y = seq(10, 400, 10)  # Y position of samples
+  )
+  # Add indices i and j
+  grid$i <- grid$x / 10
+  grid$j <- grid$y / 10
+  
+  return(grid)
+}
+
 # Filtering the Data with the Name for a given Level
 select_tax <- function(Data, Level, Name){
   
@@ -34,14 +48,11 @@ normalization <- function(count) {
 # Make bota grid (count and density)
 bota_grid_count <- function(bota_focus, R){
   
-  # Create the doublet (x,y)
-  grid <- expand.grid(
-    x = seq(10,300,10), # X position of samples
-    y = seq(10,400,10) # Y position of samples
-  )
-  # Add indices
-  grid$i <- grid$x / 10
-  grid$j <- grid$y / 10
+  # Create Grid
+  grid <- ref_grid()
+  
+  # Initialize Count to NA
+  grid$count <- NA
   
   # Count the number of trees around each pixels in a circle of radius R
   grid$count <- pmap_int( # Apply a function to each coordinates (x,y)
@@ -60,17 +71,10 @@ bota_grid_count <- function(bota_focus, R){
 
 bota_grid_NCI <- function(bota_focus){
   
-  # Create the doublet (x,y)
-  grid <- expand.grid(
-    x = seq(10, 300, 10),
-    y = seq(10, 400, 10)
-  )
+  # Create Grid
+  grid <- ref_grid()
   
-  # Add indices
-  grid$i <- grid$x / 10
-  grid$j <- grid$y / 10
-  
-  # Initialize NCI column
+  # Initialize NCI to NA
   grid$count <- NA
   
   # Loop over rows (pixels)
@@ -114,17 +118,12 @@ get_FGs <-function(data){
 }
 
 # Select genetical reads with Marker and Name at a give Level
-select_genet <- function(gene, Marker, Level, Name){
+select_genet <- function(gene, Marker, level, Name){
   
-  # Select marker
-  genet_focus <- gene[[Marker]]
-  
-  # Get Familly, Gender, species cols
-  genet_focus <- genet_focus %>% get_FGs()
-  
-  # Select taxa
-  genet_focus <- select_tax(genet_focus, level, Name) %>%
-    filter(!is.na(.data[[level]])) # col family, genus or specie
+  genet_focus <- gene[[Marker]] %>%          # Select marker
+    get_FGs() %>%                            # Get Familly, Gender, species cols
+    select_tax(level, Name) %>% # Select taxa
+    filter(!is.na(.data[[level]]))           # Remove NA
   
   # Return
   return(genet_focus)
@@ -132,6 +131,9 @@ select_genet <- function(gene, Marker, Level, Name){
 
 # Create genet grid
 genet_grid <- function(genet_focus){
+  
+  # Create Grid
+  grid <- ref_grid()
   
   # Get count of sequences by samples
   sample_df <- sample_seq_count(genet_focus)
@@ -186,7 +188,7 @@ genet_grid_write_all <- function(PROJECT_PATH, gene, markers, m_levels){
         print(fileName)
         # Focus taxa
         focus <- select_tax(mark_focus, l, n) %>%
-          filter(!is.na(.data[[level]])) # col family, genus or specie
+          filter(!is.na(.data[[l]])) # col family, genus or specie
         # Write
         genet_grid_write(PROJECT_PATH, focus, fileName)
       }
@@ -226,7 +228,7 @@ df_compare_join <- function(genet_grid, bota_grid){
 # m_levels <- c("Family","Genus","Species")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
 
-# # Test write
+# Test write
 # markers <- c("GH")
 # m_levels <- c("Family")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)

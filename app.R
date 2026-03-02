@@ -1,8 +1,6 @@
 
 # ===== app.R =====
 # Contain the app for dashbord with shinny package
-# - 
-
 
 # ===== Libraries =====
 library(shiny)           # Dashboard package
@@ -11,19 +9,12 @@ library(fresh)           # Personnalise the theme (colors)
 library(patchwork) # Arrange plots
 
 # ===== Import data =====
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv") # import gene
-PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
+#load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv") # import gene
+
 
 # ===== Source data and plots =====
-source("data_import.R")
 source("data_prep.R")
 source("plots.R")
-
-# # ===== Définir la palette de couleur =====
-# COL_1 <- "darkblue"   # couleur principale
-# COL_15 <- "blue" # 50% du dégradé
-# COL_2 <- "lightblue"   # couleur secondaire
-# COL_3 <- "cyan" # couleur secondaire avec filtre blanc
 
 # ===== User Interface =====
 ui <- dashboardPage(
@@ -109,19 +100,25 @@ server <- function(input, output, session){
     # Return
     return(df)
   })
+  # Inventaire botanique
+  bota_f <- reactive({
+    df <- bota %>% select_tax(input$level, input$name)
+    return(df)
+  })
   
   # ===== VUE GLOBALE =====
   # Plot compare
   output$renderPlot_compare <- renderPlot({
-    p1 <- plot_grid_stem(bota_grid(),"density") +
+    p1 <- plot_grid_stem(bota_grid(), bota_f(),"density") +
       labs(title = "Bota density")
-    p2 <- plot_grid_stem(genet_grid(),"density")+
+    p2 <- plot_grid_stem(genet_grid(), bota_f(),"density")+
       labs(title = "Genet density")
     p3 <- plot_compare(
       df_compare_join( # data prep
         genet_grid(), # reactive data
         bota_grid()   # reactive data
-      )
+      ),
+      bota_f() # filtered bota
     )
     # Plot patchwork
     (p1 | p2 | p3) 

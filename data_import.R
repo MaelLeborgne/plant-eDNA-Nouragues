@@ -2,6 +2,8 @@
 # ===== data_import.R =====
 # Regroup importation functions by Subject
 
+# Path of the project
+PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
 
 # ===== Libraries =====
 library(tidyverse) # Basic
@@ -107,10 +109,15 @@ loc_seq_count <- function(sample_df){
     summarise("count" = mean(count))
   
   # Add (x,y) with sample_ref
-  loc_df <- left_join(sample_df, sample_ref, by="sample_loc")
+  mean_sample <- left_join(sample_df, samples_ref, by="sample_loc")
+  
+  # Complete missing value with zeros
+  genet_grid <- ref_grid() %>%
+    left_join(mean_sample, by = c("x", "y")) %>%
+    mutate(count = replace_na(count, 0))
   
   # Return
-  return(loc_df)
+  return(genet_grid)
 }
 
 
@@ -148,4 +155,14 @@ create_taxid_ref <- function(){
   # Return
   tax_table
 }
+
+# ==== CREATE AND SAVE DATA ====
+# Import functions
+bota <- import_bota(PROJECT_PATH) # Bota
+gene <- import_genet(PROJECT_PATH) # Genet
+tax_table <- create_taxid_ref() # Taxid
+samples_ref <- create_sample_ref(PROJECT_PATH) # Samples names / position
+
+# Save in a file
+base::save.image("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
 
