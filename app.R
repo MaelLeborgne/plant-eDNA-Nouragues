@@ -31,7 +31,11 @@ ui <- dashboardPage(
     selectInput("level","Level", # choix utilisateur # Label
                 choices = c("Family","Genus","Species")),
     selectInput("name","Name", # choix utilisateur # Label
-                choices = c("All")) # à update dans le serveur
+                choices = c("All")), # à update dans le serveur
+    selectInput("model_bota","Model bota", # choix utilisateur # Label
+                choices = c("Count","NCI", "Gaussian")),
+    selectInput("var","Variable de Comparaison", # choix utilisateur # Label
+                choices = c("Count","Density", "Div alpha"))
     ),
   
   dashboardBody(
@@ -41,7 +45,8 @@ ui <- dashboardPage(
       tabItem(tabName="global",
               
               fluidRow(
-                box(plotOutput("renderPlot_compare"), width=12) # 100% = 12
+                box(plotOutput("renderPlot_compare"), width=10), # 100% = 12
+                valueBoxOutput("R2", width=2)
               )
       )
     )
@@ -79,12 +84,30 @@ server <- function(input, output, session){
   )
   # Bota grid 
   bota_grid <- reactive({
-    # Compute grid
-    df <- select_tax(
-      bota,            # inventaire botanique
-      input$level,     # Level
-      input$name) %>%  # Name
-      bota_grid_NCI()
+    
+    # Select Taxa
+    if(input$name == "All"){
+      df <- bota
+    }
+    else{
+      df <- select_tax(
+        bota,            # inventaire botanique
+        input$level,     # Level
+        input$name)      # Name
+    }
+    
+    # Chose model
+    if (input$model_bota == "Count"){
+      df <- df %>% bota_grid_count(10)
+    }
+    else if (input$model_bota == "NCI"){
+      df <- df %>% bota_grid_NCI()
+    }
+    else if (input$model_bota == "Gaussian"){
+      result <- optim_gauss(genet_grid())
+      df <- df %>% bota_grid_Gauss(result$par[1], result$par[2])
+    }
+    
     # Return
     return(df)
   })
@@ -122,6 +145,16 @@ server <- function(input, output, session){
     )
     # Plot patchwork
     (p1 | p2 | p3) 
+  })
+  # R-squared
+  output$R2 <- renderValueBox({
+    r2 <- R_squared(
+      df_compare_join(
+        genet_grid(),
+        bota_grid()
+      )
+    ) %>% round(digits = 3)
+    valueBox(r2,"R2", color = "blue")
   })
   
 }
