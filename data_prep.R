@@ -180,6 +180,30 @@ optim_gauss <- function(genet_grid) {
   return(res)
 }
 
+bota_grid_compute <- function(bota, level, name, model_bota){
+  
+  # Select Taxa
+  if(name == "All"){
+    df <- bota
+  } else {
+    df <- select_tax(bota, level, name)
+  }
+  
+  # Choose model
+  if(model_bota == "Count"){
+    df <- df %>% bota_grid_count(10)
+    
+  } else if(model_bota == "NCI"){
+    df <- df %>% bota_grid_NCI()
+    
+  } else if(model_bota == "Gaussian"){
+    result <- optim_gauss(genet_data)
+    df <- df %>% bota_grid_Gauss(result$par[1], result$par[2])
+  }
+  
+  return(df)
+}
+
 # ===== GENET =====
 
 # Get Familly, Genus, species from faxid reference
@@ -321,6 +345,46 @@ R_squared <- function(df_compare){
   # Return
   R2 <- 1 - (SS_residual / SS_total)
   return(R2)
+}
+
+R2_taxon <- function(Marker, Level, Model_bota){
+  # All Names
+  all_names <- give_level_names(Marker,Level)
+  # Give all R2
+  all_r2 <- lapply(all_names, function(n){
+    # Bota grid
+    bota_df <- bota_grid_compute(
+      bota = bota,
+      level = Level,
+      name = n,
+      model_bota = Model_bota
+    )
+    # Genet grid
+    genet_df <- genet_grid_read(
+      PROJECT_PATH,
+      m = Marker,
+      l = Level,
+      n = n
+    )
+    
+    # Compute R2
+    r2 <- df_compare_join(bota_df, genet_df) %>%
+      R_squared()
+    
+    # Put in a dataframe
+    mono_df <- data.frame(
+      Name = n, # name
+      R2 = round(r2,digits = 2)
+    )
+    return(mono_df)
+  })
+  
+  # Fusion en un seul dataframe
+  final_df <- do.call(rbind, all_r2) %>% 
+    filter(!is.na(.data[["R2"]])) %>%
+    arrange(desc(R2))
+  
+  return(final_df)
 }
 
 # ==== WRITE ALL GENET_GRID ====

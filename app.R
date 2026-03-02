@@ -6,7 +6,8 @@
 library(shiny)           # Dashboard package
 library(shinydashboard)  # Dashboard package
 library(fresh)           # Personnalise the theme (colors)
-library(patchwork) # Arrange plots
+library(patchwork)       # Arrange plots
+library(DT)              # Tables
 
 # ===== Import data =====
 #load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv") # import gene
@@ -46,7 +47,9 @@ ui <- dashboardPage(
               
               fluidRow(
                 box(plotOutput("renderPlot_compare"), width=10), # 100% = 12
-                valueBoxOutput("R2", width=2)
+                valueBoxOutput("R2", width=2),
+                DTOutput("R2_tab")
+                #box(plotOutput("renderBarplot_R2_taxon"),width=12, height = "5000px")
               )
       )
     )
@@ -85,47 +88,38 @@ server <- function(input, output, session){
   # Bota grid 
   bota_grid <- reactive({
     
-    # Select Taxa
-    if(input$name == "All"){
-      df <- bota
-    }
-    else{
-      df <- select_tax(
-        bota,            # inventaire botanique
-        input$level,     # Level
-        input$name)      # Name
-    }
+    bota_grid_compute(
+      bota       = bota,
+      level      = input$level,
+      name       = input$name,
+      model_bota = input$model_bota
+    )
     
-    # Chose model
-    if (input$model_bota == "Count"){
-      df <- df %>% bota_grid_count(10)
-    }
-    else if (input$model_bota == "NCI"){
-      df <- df %>% bota_grid_NCI()
-    }
-    else if (input$model_bota == "Gaussian"){
-      result <- optim_gauss(genet_grid())
-      df <- df %>% bota_grid_Gauss(result$par[1], result$par[2])
-    }
-    
-    # Return
-    return(df)
   })
+  
   # Genet grid 
   genet_grid <- reactive({
-    # Read grid
-    df <- genet_grid_read(
+    
+    genet_grid_read(
       PROJECT_PATH,
       input$marker, # Marker
       input$level,  # Level
       input$name    # Name
       )
-    # Return
-    return(df)
+    
   })
+  
   # Inventaire botanique
   bota_f <- reactive({
     df <- bota %>% select_tax(input$level, input$name)
+    return(df)
+  })
+  
+  # Dynamic compare
+  df_compare <- reactive({
+    df <- R2_taxon(Marker = input$marker,
+                   Level = input$level,
+                   Model_bota = input$model_bota)
     return(df)
   })
   
@@ -155,6 +149,20 @@ server <- function(input, output, session){
       )
     ) %>% round(digits = 3)
     valueBox(r2,"R2", color = "blue")
+  })
+  # Barplot R_suaqred
+  output$renderBarplot_R2_taxon <- renderPlot({ 
+      barplot_R2_taxon( df_compare()) 
+      },
+    height = function() {nrow(df_compare()) * 40}
+  )
+  # Tableau de R2
+  output$R2_tab <- renderDT({
+    datatable(
+      df_compare(),        # dataframe
+      options = list(pageLength = 10), # 10 lignes par page
+      rownames = TRUE
+    )
   })
   
 }
