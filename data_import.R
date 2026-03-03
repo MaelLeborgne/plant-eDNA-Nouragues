@@ -2,9 +2,6 @@
 # ===== data_import.R =====
 # Regroup importation functions by Subject
 
-# Path of the project
-PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
-
 # ===== Libraries =====
 library(tidyverse) # Basic
 library(dplyr) # Basic
@@ -14,6 +11,9 @@ library(Matrix) # output of OBITool
 library(taxize) # taxid and NCBI
 library(jsonlite) # manage json
 library(vegan)
+
+# ===== Source data prep =====
+source("data_prep.R")
 
 # ===== GENERAL =====
 # Create reference dataframe for sample name and position
@@ -135,6 +135,9 @@ loc_mean <- function(sample_df){
       Weight       = replace_na(.data[["Weight"]],    0),
       OTU          = replace_na(.data[["OTU"]],       0),
       Div_alpha    = replace_na(.data[["Div_alpha"]], 0)
+      ) %>%
+    mutate(
+      Weight_density = normalization(Weight)
       )
   
   # Return
@@ -178,12 +181,14 @@ create_taxid_ref <- function(){
 }
 
 # ==== CREATE AND SAVE DATA ====
-# # Import functions
-# bota <- import_bota(PROJECT_PATH) # Bota
-# gene <- import_genet(PROJECT_PATH) # Genet
-# tax_table <- create_taxid_ref() # Taxid
-# samples_ref <- create_sample_ref(PROJECT_PATH) # Samples names / position
-# 
-# # Save in a file
-# base::save.image("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
+# Import functions
+data_list <- list(
+  bota = bota,
+  gene = gene,
+  tax_table = tax_table,
+  samples_ref = samples_ref
+)
+
+save(data_list,
+     file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
 

@@ -2,6 +2,8 @@
 # ===== data_prep.R =====
 # Regroup data preparation functions by Subject
 
+# Path of the project
+PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
 
 # ===== Libraries =====
 library(tidyverse) # Basic
@@ -47,6 +49,7 @@ normalization <- function(count) {
   return(density)
 }
 
+# Generic function to compute bota grid
 bota_grid_engine <- function(bota_focus, 
                              R = 20,
                              fun_pixel,
@@ -76,31 +79,37 @@ bota_grid_engine <- function(bota_focus,
   }
   
   if (normalize) {
-    grid[[paste0(var_name, "_density")]] <- 
-      normalization(grid[[var_name]])
+    grid[[var_name]] <- normalization(grid[[var_name]])
   }
   
   return(grid)
 }
 
-bota_grid_count <- function(bota_focus, R = 10){
-  
+# Count
+bota_grid_count <- function(bota_focus = bota, 
+                            R = 10, 
+                            user_norm = FALSE
+                            ){
+  # Give calcul to generic function
   bota_grid_engine(
     bota_focus,
     R = R,
     var_name = "Count",
+    normalize = user_norm,
     fun_pixel = function(df, sel, dij){
       length(sel)
     }
   )
 }
 
-bota_grid_NCI <- function(bota_focus, R = 20){
-  
+# NCI
+bota_grid_NCI <- function(bota_focus, R = 20, user_norm){
+  # Give calcul to generic function
   bota_grid_engine(
     bota_focus,
     R = R,
     var_name = "NCI",
+    normalize = user_norm,
     fun_pixel = function(df, sel, dij){
       sum((df$CircCorr[sel]^2) * 
             exp(-0.25 * dij[sel]),
@@ -109,12 +118,14 @@ bota_grid_NCI <- function(bota_focus, R = 20){
   )
 }
 
-bota_grid_Gauss <- function(bota_focus, BETA, GAMMA, R = 20){
-  
+# Gaussian
+bota_grid_Gauss <- function(bota_focus, BETA, GAMMA, R = 20, user_norm){
+  # Give calcul to generic function
   bota_grid_engine(
     bota_focus,
     R = R,
     var_name = "Gaussian",
+    normalize = user_norm,
     fun_pixel = function(df, sel, dij){
       sum(
         (pi*(df$CircCorr[sel]/2)^2) *
@@ -154,27 +165,29 @@ optim_gauss <- function(genet_grid) {
   )
   return(res)
 }
+
 # OTU
-bota_grid_OTU <- function(bota_focus, R = 20){
-  
+bota_grid_OTU <- function(bota_focus, R = 20, user_norm){
+  # Give calcul to generic function
   bota_grid_engine(
     bota_focus,
     R = R,
     var_name = "OTU",
-    normalize = FALSE,   # pas de densité ici
+    normalize = user_norm,
     fun_pixel = function(df, sel, dij){
       length(unique(df$Species[sel]))
     }
   )
 }
+
 # Div_alpha
-bota_grid_div_a <- function(bota_focus, R = 20){
-  
+bota_grid_div_a <- function(bota_focus, R = 20, user_norm){
+  # Give calcul to generic function
   bota_grid_engine(
     bota_focus,
     R = R,
     var_name = "Div_alpha",
-    normalize = FALSE,
+    normalize = user_norm,
     fun_pixel = function(df, sel, dij){
       sp_counts <- table(df$Species[sel])
       vegan::diversity(sp_counts, index = "simpson")
@@ -182,30 +195,33 @@ bota_grid_div_a <- function(bota_focus, R = 20){
   )
 }
 
-
-# Apply conditions on bota grid computation
-bota_grid_compute <- function(bota, level, name, var_bota){
+# Apply conditions for bota grid calcul
+bota_grid_compute <- function(bota_df   = bota, 
+                              level     = "Family", 
+                              name      = "Fabaceae", 
+                              var_bota  = "Count", 
+                              user_norm = TRUE
+                              ){
   
   # Sélection du taxon et gestion du all
-  df <- if(name == "All") bota else select_tax(bota, level, name)
+  df <- if(name == "All") bota_df else select_tax(bota_df, level, name)
   
-  # Retourne une grille vide si aucun individu
-  if(nrow(df) == 0){
-    warning("No individuals for this selection.")
-    return(ref_grid())
-  }
+  # # Retourne une grille vide si aucun individu
+  # if(nrow(df) == 0){
+  #   warning("No individuals for this selection.")
+  # }
   
   # Choix de la métrique botanique via switch
   df <- switch(var_bota,
-               "Count"     = bota_grid_count(df, R = 10),
-               "NCI"       = bota_grid_NCI(df),
+               "Count"     = bota_grid_count(df, R = 15, user_norm),
+               "NCI"       = bota_grid_NCI(df, user_norm),
                "Gaussian"  = {
                  if(is.null(df)) stop("bota required for Gaussian")
                  result <- optim_gauss(bota)
-                 bota_grid_Gauss(df, BETA = result$par[1], GAMMA = result$par[2])
+                 bota_grid_Gauss(df, BETA = result$par[1], GAMMA = result$par[2], user_norm)
                },
-               "OTU"       = bota_grid_OTU(df, R = 20),
-               "Div_alpha" = bota_grid_div_a(df, R = 20),
+               "OTU"       = bota_grid_OTU(df, R = 20, user_norm),
+               "Div_alpha" = bota_grid_div_a(df, R = 20, user_norm),
                stop("Unknown var_bota: ", var_bota)  # gestion d'erreur
   )
   
@@ -243,9 +259,6 @@ genet_grid_count <- function(genet_focus){
   
   # Mean sample count by localisation
   genet_grid <- loc_mean(sample_df)
-  
-  # Normalisation
-  genet_grid$Weight_density <- genet_grid$Weight %>% normalization()
   
   # Return
   return(genet_grid)
@@ -307,9 +320,13 @@ genet_grid_write_all <- function(PROJECT_PATH, gene, markers, m_levels){
 }
 
 # Read grid from csv in ./genet_grid/
-genet_grid_read <- function(PROJECT_PATH, m, l, n){
+genet_grid_read <- function(path = PROJECT_PATH,
+                            m = "GH", 
+                            l = "Family", 
+                            n = "Fabaceae"
+                            ){
   fileName <- paste0(m,"_",l,"_",n,".csv")
-  genet_grid <- read.csv(paste0(PROJECT_PATH,"genet_grid/",fileName))
+  genet_grid <- read.csv(paste0(path,"genet_grid/",fileName))
   # Return
   return(genet_grid)
 }
@@ -317,24 +334,28 @@ genet_grid_read <- function(PROJECT_PATH, m, l, n){
 # ===== COMPARE =====
 
 # Join genet and bota grid in the same dataframe
-df_compare_join <- function(genet_grid, bota_grid, var_bota, var_genet){
+df_compare_join <- function(grid_pred  = genet_grid_read(), 
+                            grid_obs   = bota_grid_compute(), 
+                            var_pred   = "Weight_density", 
+                            var_obs    = "Count"
+                            ){
   # Joining
-  df_compare <- genet_grid %>%
-    rename(value_genet = !!var_genet) %>%   # rename chosen genetic variable
-    left_join(bota_grid, by = c("x", "y")) %>%
-    rename(value_bota = !!var_bota)         # rename chosen botanical variable
+  df_compare <- grid_pred %>%
+    rename(value_pred = !!var_pred) %>%   # rename chosen genetic variable
+    left_join(grid_obs, by = c("x", "y")) %>%
+    rename(value_obs = !!var_obs)         # rename chosen botanical variable
   # Add error column
   df_compare <- df_compare %>%
-    mutate(err_abs = value_genet - value_bota)
+    mutate(err_abs = value_pred - value_obs)
   # Return
   return(df_compare)
 }
 
 # Calcul de R^2 manuellement
-R_squared <- function(df_compare, var_obs, var_pred){
+R_squared <- function(df_compare){
   
-  y <- df_compare[[var_obs]]                       # Donnée de référence
-  y_pred <- df_compare[[var_pred]]                 # Prédictions du modèle
+  y <- df_compare[["value_obs"]]                       # Donnée de référence
+  y_pred <- df_compare[["value_pred"]]                 # Prédictions du modèle
   
   y_mean <- mean(y, na.rm = TRUE)                  # Moyenne des données observées
   
@@ -347,34 +368,39 @@ R_squared <- function(df_compare, var_obs, var_pred){
 }
 
 # Return Tax dataframe with all R2
-R2_taxon <- function(Marker, Level, var_bota, var_genet){
+R2_taxon <- function(Marker    = "GH", 
+                     Level     = "Family", 
+                     var_bota  = "Count", 
+                     var_genet = "Weight_density", 
+                     user_norm = TRUE
+                     ){
   # All Names
   all_names <- give_level_names(Marker,Level)
   # Give all R2
   all_r2 <- lapply(all_names, function(n){
     # Bota grid
     bota_df <- bota_grid_compute(
-      bota = bota,
-      level = Level,
-      name = n,
-      var_bota = var_bota,
-      var = var_genet
+      bota_df      = bota,
+      level        = Level,
+      name         = n,
+      var_bota     = var_bota,
+      user_norm    = user_norm
     )
     # Genet grid
     genet_df <- genet_grid_read(
       PROJECT_PATH,
       m = Marker,
       l = Level,
-      n = n,
-      var = var_genet
+      n = n
     )
     
     # Compute R2
-    r2 <- df_compare_join(genet_df, bota_df, var_bota, var_genet) %>%
-      R_squared(
-        var_obs = var_genet, 
-        var_pred = var_bota
-      )
+    r2 <- df_compare_join(
+      grid_pred  = genet_df, 
+      grid_obs   = bota_df, 
+      var_pred   = var_genet, 
+      var_obs    = var_bota
+    ) %>% R_squared()
     
     # Put in a dataframe
     mono_df <- data.frame(
