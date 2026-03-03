@@ -12,6 +12,8 @@ library(magrittr)  # %<>%
 library(ROBIFastread) # Read fasta
 library(Matrix) # output of OBITool
 library(taxize) # taxid and NCBI
+library(jsonlite) # manage json
+library(vegan)
 
 # ===== GENERAL =====
 # Create reference dataframe for sample name and position
@@ -82,31 +84,46 @@ extract_feature <- function(data, key){
 sample_seq_count <- function(genet_focus){
   
   # Extract quantitative value in a matrix 
-  sample_matrix <- extract_feature(genet_focus,"obiclean_weight") 
+  sample_matrix <- extract_feature(genet_focus,"obiclean_weight")
   
-  # Sum all count sequence of each sample for the targeted taxa
-  sample_df <- sample_matrix %>%
-    rowSums() %>% # sum
-    as.data.frame()
+  # Weight by sample
+  sample_weight <- data.frame(
+    sample_id = rownames(sample_matrix),
+    Weight = rowSums(sample_matrix)
+  )
   
-  # Put rownames in a new column
-  sample_df$sample_id <- rownames(sample_df)
-  sample_df$count <- sample_df$.
-  sample_df <- sample_df %>%
-    select(sample_id,count)
+  # Nombre d'OTU
+  sample_otu <- data.frame(
+    sample_id = rownames(sample_matrix),
+    OTU = rowSums(sample_matrix > 0)
+  )
   
-  # Return the doublet (sample_id, count)
+  # Diversité de Shannon
+  sample_shannon <- data.frame(
+    sample_id = rownames(sample_matrix),
+    Div_alpha = diversity(sample_matrix, index = "shannon")
+  )
+  
+  # Join
+  sample_df <- left_join(sample_otu, sample_shannon, by = "sample_id") %>%
+    left_join(sample_weight, by = "sample_id")
+  
+  # Return the doublet (sample_id, Count)
   return(sample_df)
 }
 
-# Mean samples count by localisation
-loc_seq_count <- function(sample_df){
+# Mean samples Count by localisation
+loc_mean <- function(sample_df){
   
   # Mean samples count by localisation
   sample_df <- sample_df %>%
     separate(sample_id, into = c("sample_loc", "sample_rep"), sep = "_") %>%
     group_by(sample_loc) %>%
-    summarise("count" = mean(count))
+    summarise(
+      Weight    = mean(.data[["Weight"]]   , na.rm = TRUE),
+      OTU       = mean(.data[["OTU"]]      , na.rm = TRUE),
+      Div_alpha = mean(.data[["Div_alpha"]], na.rm = TRUE)
+      )
   
   # Add (x,y) with sample_ref
   mean_sample <- left_join(sample_df, samples_ref, by="sample_loc")
@@ -114,7 +131,11 @@ loc_seq_count <- function(sample_df){
   # Complete missing value with zeros
   genet_grid <- ref_grid() %>%
     left_join(mean_sample, by = c("x", "y")) %>%
-    mutate(count = replace_na(count, 0))
+    mutate(
+      Weight       = replace_na(.data[["Weight"]],    0),
+      OTU          = replace_na(.data[["OTU"]],       0),
+      Div_alpha    = replace_na(.data[["Div_alpha"]], 0)
+      )
   
   # Return
   return(genet_grid)
@@ -157,12 +178,12 @@ create_taxid_ref <- function(){
 }
 
 # ==== CREATE AND SAVE DATA ====
-# Import functions
-bota <- import_bota(PROJECT_PATH) # Bota
-gene <- import_genet(PROJECT_PATH) # Genet
-tax_table <- create_taxid_ref() # Taxid
-samples_ref <- create_sample_ref(PROJECT_PATH) # Samples names / position
-
-# Save in a file
-base::save.image("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
+# # Import functions
+# bota <- import_bota(PROJECT_PATH) # Bota
+# gene <- import_genet(PROJECT_PATH) # Genet
+# tax_table <- create_taxid_ref() # Taxid
+# samples_ref <- create_sample_ref(PROJECT_PATH) # Samples names / position
+# 
+# # Save in a file
+# base::save.image("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
 

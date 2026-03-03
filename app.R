@@ -10,7 +10,7 @@ library(patchwork)       # Arrange plots
 library(DT)              # Tables
 
 # ===== Import data =====
-#load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ModelEnv") # import gene
+#load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport") # import gene
 
 
 # ===== Source data and plots =====
@@ -33,10 +33,10 @@ ui <- dashboardPage(
                 choices = c("Family","Genus","Species")),
     selectInput("name","Name", # choix utilisateur # Label
                 choices = c("All")), # à update dans le serveur
-    selectInput("model_bota","Model bota", # choix utilisateur # Label
-                choices = c("Count","NCI", "Gaussian")),
-    selectInput("var","Variable de Comparaison", # choix utilisateur # Label
-                choices = c("Count","Density", "Div alpha"))
+    selectInput("var_bota","Variable bota", # choix utilisateur # Label
+                choices = c("Count","NCI", "Gaussian","OTU","Div_alpha")),
+    selectInput("var_genet","Variable genet", # choix utilisateur # Label
+                choices = c("Weight","Weight_density", "OTU","Div_alpha"))
     ),
   
   dashboardBody(
@@ -47,6 +47,7 @@ ui <- dashboardPage(
               
               fluidRow(
                 box(plotOutput("renderPlot_compare"), width=10), # 100% = 12
+                valueBoxOutput("Name", width=2),
                 valueBoxOutput("R2", width=2),
                 DTOutput("R2_tab")
                 #box(plotOutput("renderBarplot_R2_taxon"),width=12, height = "5000px")
@@ -92,7 +93,7 @@ server <- function(input, output, session){
       bota       = bota,
       level      = input$level,
       name       = input$name,
-      model_bota = input$model_bota
+      var_bota = input$var_bota
     )
     
   })
@@ -119,21 +120,24 @@ server <- function(input, output, session){
   df_compare <- reactive({
     df <- R2_taxon(Marker = input$marker,
                    Level = input$level,
-                   Model_bota = input$model_bota)
+                   var_bota = input$var_bota,
+                   var_genet   = input$var_genet)
     return(df)
   })
   
   # ===== VUE GLOBALE =====
   # Plot compare
   output$renderPlot_compare <- renderPlot({
-    p1 <- plot_grid_stem(bota_grid(), bota_f(),"density") +
+    p1 <- plot_grid_stem(bota_grid(), bota_f(),input$var_genet) +
       labs(title = "Bota density")
-    p2 <- plot_grid_stem(genet_grid(), bota_f(),"density")+
+    p2 <- plot_grid_stem(genet_grid(), bota_f(),input$var_genet)+
       labs(title = "Genet density")
     p3 <- plot_compare(
       df_compare_join( # data prep
-        genet_grid(), # reactive data
-        bota_grid()   # reactive data
+        genet_grid(),
+        bota_grid(),
+        var_bota = input$var_bota,
+        var_genet = input$var_genet
       ),
       bota_f() # filtered bota
     )
@@ -145,10 +149,18 @@ server <- function(input, output, session){
     r2 <- R_squared(
       df_compare_join(
         genet_grid(),
-        bota_grid()
-      )
+        bota_grid(),
+        var_bota = input$var_bota,
+        var_genet = input$var_genet
+      ), 
+      var_obs = input$var_genet,
+      var_pred = input$var_bota
     ) %>% round(digits = 3)
-    valueBox(r2,"R2", color = "blue")
+    valueBox(paste0("R2 = ",r2),"", color = "blue")
+  })
+  # Name box
+  output$Name <- renderValueBox({
+    valueBox(input$name,paste0("Level : ",input$level," / Marker : ", input$marker), color = "blue")
   })
   # Barplot R_suaqred
   output$renderBarplot_R2_taxon <- renderPlot({ 

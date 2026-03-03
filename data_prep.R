@@ -5,10 +5,11 @@
 
 # ===== Libraries =====
 library(tidyverse) # Basic
-library(dplyr) # Basic
-library(tibble) # Tibble class
+library(dplyr)   # Basic
+library(tibble)  # Tibble class
 library(stringr) # Work on string
-library(purrr) # pmap_int()
+library(purrr)   # pmap_int()
+library(vegan)   # OTU diversity
 
 # ===== GENERAL =====
 
@@ -16,8 +17,8 @@ library(purrr) # pmap_int()
 ref_grid <- function(){
   # X and Y
   grid <- expand.grid(
-    x = seq(10, 300, 10), # X position of samples
-    y = seq(10, 400, 10)  # Y position of samples
+    x = seq(10, 290, 10), # X position of samples
+    y = seq(10, 390, 10)  # Y position of samples
   )
   # Add indices i and j
   grid$i <- grid$x / 10
@@ -46,108 +47,82 @@ normalization <- function(count) {
   return(density)
 }
 
-# Make bota grid (count and density)
-bota_grid_count <- function(bota_focus, R){
-  
-  # Create Grid
+bota_grid_engine <- function(bota_focus, 
+                             R = 20,
+                             fun_pixel,
+                             var_name = "value",
+                             normalize = TRUE){
+  # Ref grid
   grid <- ref_grid()
+  # Initailisation
+  grid[[var_name]] <- NA
   
-  # Initialize Count to NA
-  grid$count <- NA
+  # Iterate over pixels
+  for (pixel in 1:nrow(grid)) {
+    
+    px <- grid$x[pixel]
+    py <- grid$y[pixel]
+    
+    dij <- sqrt((px - bota_focus$Xfield)^2 + 
+                  (py - bota_focus$Yfield)^2)
+    
+    sel <- which(dij < R & dij > 0)
+    
+    if (length(sel) == 0) {
+      grid[[var_name]][pixel] <- 0
+    } else {
+      grid[[var_name]][pixel] <- fun_pixel(bota_focus, sel, dij)
+    }
+  }
   
-  # Count the number of trees around each pixels in a circle of radius R
-  grid$count <- pmap_int( # Apply a function to each coordinates (x,y)
-    list(grid$x, grid$y), # Element of iterations
-    \(x, y) sum((x - bota_focus$Xfield)^2 + # Count TRUE ...
-                  (y - bota_focus$Yfield)^2 <= R^2, # ... on Pytagore condition (dx²-dy² <= R²)
-                na.rm = TRUE)
-  )
+  if (normalize) {
+    grid[[paste0(var_name, "_density")]] <- 
+      normalization(grid[[var_name]])
+  }
   
-  # Convert count to density
-  grid$density <- grid$count %>% normalization()
-  
-  # Return
   return(grid)
 }
 
-bota_grid_NCI <- function(bota_focus){
+bota_grid_count <- function(bota_focus, R = 10){
   
-  # Create Grid
-  grid <- ref_grid()
-  
-  # Initialize NCI to NA
-  grid$count <- NA
-  
-  # Loop over rows (pixels)
-  for (pixel in 1:nrow(grid)) {
-    
-    # Coordinates of the current pixel
-    px <- grid$x[pixel]
-    py <- grid$y[pixel]
-    
-    # Euclidean distance between this pixel and all trees
-    dij <- sqrt((px - bota_focus$Xfield)^2 + 
-                  (py - bota_focus$Yfield)^2)
-    
-    # Keep only trees within 20 m (excluding distance 0)
-    sel <- which(dij < 20 & dij > 0)
-    
-    if (length(sel) == 0) {
-      grid$count[pixel] <- 0
-    } else { # Compute the NCI
-      grid$count[pixel] <- sum( 
-        (bota_focus$CircCorr[sel]^2) * 
-          exp(-0.25 * dij[sel]),
-        na.rm = TRUE
-      )
+  bota_grid_engine(
+    bota_focus,
+    R = R,
+    var_name = "Count",
+    fun_pixel = function(df, sel, dij){
+      length(sel)
     }
-  }
-  
-  # Convert NCI to density
-  grid$density <- grid$count %>% normalization()
-  
-  # Return
-  return(grid)
+  )
 }
+
+bota_grid_NCI <- function(bota_focus, R = 20){
   
-# Gaussian model for botanical grid
-bota_grid_Gauss <- function(bota_focus, BETA, GAMMA){
+  bota_grid_engine(
+    bota_focus,
+    R = R,
+    var_name = "NCI",
+    fun_pixel = function(df, sel, dij){
+      sum((df$CircCorr[sel]^2) * 
+            exp(-0.25 * dij[sel]),
+          na.rm = TRUE)
+    }
+  )
+}
+
+bota_grid_Gauss <- function(bota_focus, BETA, GAMMA, R = 20){
   
-  # Create Grid
-  grid <- ref_grid()
-  # Initialize NCI to NA
-  grid$count <- NA
-  
-  # Loop over rows (pixels)
-  for (pixel in 1:nrow(grid)) {
-    
-    # Coordinates of the current pixel
-    px <- grid$x[pixel]
-    py <- grid$y[pixel]
-    
-    # Euclidean distance between this pixel and all trees
-    dij <- sqrt((px - bota_focus$Xfield)^2 + 
-                  (py - bota_focus$Yfield)^2)
-    
-    # Keep only trees within 20 m (excluding distance 0)
-    sel <- which(dij < 20 & dij > 0)
-    
-    if (length(sel) == 0) {
-      grid$count[pixel] <- 0
-    } else { # Compute the gaussian index
-      grid$count[pixel] <- sum( 
-        (pi*(bota_focus$CircCorr[sel]/2)^2) * # Basal Area
-          exp(-BETA * dij[sel]^GAMMA),              # Gaussian Kernel
+  bota_grid_engine(
+    bota_focus,
+    R = R,
+    var_name = "Gaussian",
+    fun_pixel = function(df, sel, dij){
+      sum(
+        (pi*(df$CircCorr[sel]/2)^2) *
+          exp(-BETA * dij[sel]^GAMMA),
         na.rm = TRUE
       )
     }
-  }
-  
-  # Convert NCI to density
-  grid$density <- grid$count %>% normalization()
-  
-  # Return
-  return(grid)
+  )
 }
 
 ### Fonction to minimize (gauss)
@@ -155,23 +130,23 @@ rss_function <- function(par, ADNe_obs) {
   # Prameters
   beta <- par[1]
   gamma <- par[2]
-  
+
   # Prediction
   pred_grid <- bota_grid_Gauss(beta, gamma)
-  
+
   # Residuals
   resid <- ADNe_obs - pred_grid$density
-  
+
   # RSS
   print(sum(resid^2))
   print(beta)
   sum(resid^2)
   }
 
-### Launch Optimization
+### Launch Optimization (gauss)
 optim_gauss <- function(genet_grid) {
   res <- optim(
-    par = c(0.2,1), 
+    par = c(0.2,1),
     fn = rss_function,
     ADNe_obs = genet_grid$density,
     method = "L-BFGS-B",
@@ -179,27 +154,60 @@ optim_gauss <- function(genet_grid) {
   )
   return(res)
 }
+# OTU
+bota_grid_OTU <- function(bota_focus, R = 20){
+  
+  bota_grid_engine(
+    bota_focus,
+    R = R,
+    var_name = "OTU",
+    normalize = FALSE,   # pas de densité ici
+    fun_pixel = function(df, sel, dij){
+      length(unique(df$Species[sel]))
+    }
+  )
+}
+# Div_alpha
+bota_grid_div_a <- function(bota_focus, R = 20){
+  
+  bota_grid_engine(
+    bota_focus,
+    R = R,
+    var_name = "Div_alpha",
+    normalize = FALSE,
+    fun_pixel = function(df, sel, dij){
+      sp_counts <- table(df$Species[sel])
+      vegan::diversity(sp_counts, index = "simpson")
+    }
+  )
+}
 
-bota_grid_compute <- function(bota, level, name, model_bota){
+
+# Apply conditions on bota grid computation
+bota_grid_compute <- function(bota, level, name, var_bota){
   
-  # Select Taxa
-  if(name == "All"){
-    df <- bota
-  } else {
-    df <- select_tax(bota, level, name)
+  # Sélection du taxon et gestion du all
+  df <- if(name == "All") bota else select_tax(bota, level, name)
+  
+  # Retourne une grille vide si aucun individu
+  if(nrow(df) == 0){
+    warning("No individuals for this selection.")
+    return(ref_grid())
   }
   
-  # Choose model
-  if(model_bota == "Count"){
-    df <- df %>% bota_grid_count(10)
-    
-  } else if(model_bota == "NCI"){
-    df <- df %>% bota_grid_NCI()
-    
-  } else if(model_bota == "Gaussian"){
-    result <- optim_gauss(genet_data)
-    df <- df %>% bota_grid_Gauss(result$par[1], result$par[2])
-  }
+  # Choix de la métrique botanique via switch
+  df <- switch(var_bota,
+               "Count"     = bota_grid_count(df, R = 10),
+               "NCI"       = bota_grid_NCI(df),
+               "Gaussian"  = {
+                 if(is.null(df)) stop("bota required for Gaussian")
+                 result <- optim_gauss(bota)
+                 bota_grid_Gauss(df, BETA = result$par[1], GAMMA = result$par[2])
+               },
+               "OTU"       = bota_grid_OTU(df, R = 20),
+               "Div_alpha" = bota_grid_div_a(df, R = 20),
+               stop("Unknown var_bota: ", var_bota)  # gestion d'erreur
+  )
   
   return(df)
 }
@@ -224,7 +232,7 @@ select_genet <- function(gene, Marker, level, Name){
   return(genet_focus)
 }
 
-# Create genet grid
+# Create genet grid for quantitative try
 genet_grid_count <- function(genet_focus){
   
   # Create Grid
@@ -234,21 +242,10 @@ genet_grid_count <- function(genet_focus){
   sample_df <- sample_seq_count(genet_focus)
   
   # Mean sample count by localisation
-  genet_grid <- loc_seq_count(sample_df)
+  genet_grid <- loc_mean(sample_df)
   
   # Normalisation
-  genet_grid$density <- genet_grid$count %>% normalization()
-  
-  # Return
-  return(genet_grid)
-}
-
-genet_grid_divaplha <- function(genet_focus){
-  # Create Grid
-  grid <- ref_grid()
-  
-  # Get diversity of sequences by localisation
-  genet_grid <- ???
+  genet_grid$Weight_density <- genet_grid$Weight %>% normalization()
   
   # Return
   return(genet_grid)
@@ -257,6 +254,7 @@ genet_grid_divaplha <- function(genet_focus){
 genet_grid_write <- function(PROJECT_PATH, focus, fileName){
   # Make grid
   grid <- genet_grid_count(focus)
+  
   # Write
   write.csv(grid, paste0(PROJECT_PATH,"genet_grid/", fileName))
 }
@@ -319,35 +317,37 @@ genet_grid_read <- function(PROJECT_PATH, m, l, n){
 # ===== COMPARE =====
 
 # Join genet and bota grid in the same dataframe
-df_compare_join <- function(genet_grid, bota_grid){
+df_compare_join <- function(genet_grid, bota_grid, var_bota, var_genet){
   # Joining
   df_compare <- genet_grid %>%
-    rename(dens_genet = density) %>% # rename
-    rename(count_genet = count) %>% # rename
-    left_join(bota_grid, by = c("x", "y")) %>% # left join
-    rename(dens_bota = density) %>% # rename density
-    rename(count_bota = count) # rename
+    rename(value_genet = !!var_genet) %>%   # rename chosen genetic variable
+    left_join(bota_grid, by = c("x", "y")) %>%
+    rename(value_bota = !!var_bota)         # rename chosen botanical variable
   # Add error column
   df_compare <- df_compare %>%
-    mutate(err_abs = dens_genet - dens_bota)
+    mutate(err_abs = value_genet - value_bota)
   # Return
   return(df_compare)
 }
 
-R_squared <- function(df_compare){
-  # Calcul de R^2 manuellement
-  y <- df_compare$dens_genet             # Donnée de référence
-  y_pred <- df_compare$dens_bota         # Prédictions du modèle
-  y_mean <- mean(df_compare$dens_genet)  # Moyenne des données observées
-  SS_residual <- sum((y - y_pred)^2)  # Somme des carrés des résidus
-  SS_total <- sum((y - y_mean)^2)    # Somme des carrés totaux
+# Calcul de R^2 manuellement
+R_squared <- function(df_compare, var_obs, var_pred){
   
-  # Return
+  y <- df_compare[[var_obs]]                       # Donnée de référence
+  y_pred <- df_compare[[var_pred]]                 # Prédictions du modèle
+  
+  y_mean <- mean(y, na.rm = TRUE)                  # Moyenne des données observées
+  
+  SS_residual <- sum((y - y_pred)^2, na.rm = TRUE) # Somme des carrés des résidus
+  SS_total <- sum((y - y_mean)^2, na.rm = TRUE)    # Somme des carrés totaux
+  
   R2 <- 1 - (SS_residual / SS_total)
+  
   return(R2)
 }
 
-R2_taxon <- function(Marker, Level, Model_bota){
+# Return Tax dataframe with all R2
+R2_taxon <- function(Marker, Level, var_bota, var_genet){
   # All Names
   all_names <- give_level_names(Marker,Level)
   # Give all R2
@@ -357,19 +357,24 @@ R2_taxon <- function(Marker, Level, Model_bota){
       bota = bota,
       level = Level,
       name = n,
-      model_bota = Model_bota
+      var_bota = var_bota,
+      var = var_genet
     )
     # Genet grid
     genet_df <- genet_grid_read(
       PROJECT_PATH,
       m = Marker,
       l = Level,
-      n = n
+      n = n,
+      var = var_genet
     )
     
     # Compute R2
-    r2 <- df_compare_join(bota_df, genet_df) %>%
-      R_squared()
+    r2 <- df_compare_join(genet_df, bota_df, var_bota, var_genet) %>%
+      R_squared(
+        var_obs = var_genet, 
+        var_pred = var_bota
+      )
     
     # Put in a dataframe
     mono_df <- data.frame(
@@ -393,7 +398,12 @@ R2_taxon <- function(Marker, Level, Model_bota){
 # m_levels <- c("Family","Genus","Species")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
 
-# Test write
+# # Test write (Count)
+# markers <- c("GH")
+# m_levels <- c("Family")
+# genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels, "Count")
+
+# Test write (Div_alpha)
 # markers <- c("GH")
 # m_levels <- c("Family")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
