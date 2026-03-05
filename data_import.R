@@ -81,7 +81,7 @@ extract_feature <- function(data, key){
 }
 
 # Sum all different read of the focus taxa for each sample
-sample_seq_count <- function(genet_focus){
+sample_seq_count <- function(genet_focus = select_genet()){
   
   # Extract quantitative value in a matrix 
   sample_matrix <- extract_feature(genet_focus,"obiclean_weight")
@@ -101,19 +101,37 @@ sample_seq_count <- function(genet_focus){
   # Diversité de Shannon
   sample_shannon <- data.frame(
     sample_id = rownames(sample_matrix),
+    #Q1 = vegan::renyi(sample_matrix,hill=TRUE)
     Div_alpha = diversity(sample_matrix, index = "shannon")
   )
   
-  # Join
+  # Join per samples
   sample_df <- left_join(sample_otu, sample_shannon, by = "sample_id") %>%
     left_join(sample_weight, by = "sample_id")
   
-  # Return the doublet (sample_id, Count)
-  return(sample_df)
+  
+  # --- Résumé global ---
+  otu_tab <- colSums(sample_matrix)
+  total_otu <- length(otu_tab)
+  total_div <- diversity(otu_tab,index="shannon")
+  total_weight <- sum(sample_df$Weight, na.rm = TRUE)
+  
+  summary_df <- data.frame(
+    sample_id = "TOTAL_",
+    OTU = total_otu,
+    Div_alpha = round(total_div,2),
+    Weight = total_weight
+  )
+  
+  # Combiner la grille et le résumé
+  grid_with_summary <- bind_rows(sample_df, summary_df)
+  
+  # Retourner la liste : per-sample + résumé global
+  return(grid_with_summary)
 }
 
 # Mean samples Count by localisation
-loc_mean <- function(sample_df){
+loc_mean <- function(sample_df = sample_seq_count()){
   
   # Mean samples count by localisation
   sample_df <- sample_df %>%
@@ -138,7 +156,7 @@ loc_mean <- function(sample_df){
       ) %>%
     mutate(
       Weight_density = normalization(Weight)
-      )
+      ) %>% bind_rows(filter(sample_df, sample_loc =="TOTAL"))
   
   # Return
   return(genet_grid)
@@ -180,15 +198,19 @@ create_taxid_ref <- function(){
   tax_table
 }
 
-# ==== CREATE AND SAVE DATA ====
-# Import functions
-data_list <- list(
-  bota = bota,
-  gene = gene,
-  tax_table = tax_table,
-  samples_ref = samples_ref
-)
+# # Plants zinger
+# setwd(paste0(PROJECT_PATH,"zinger/"))
+# zinger_plant <- read_obifasta("Zinger_et_al_metabar_PP1_Plants.uniq.fasta")
 
-save(data_list,
-     file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
+# ==== CREATE AND SAVE DATA ====
+# # Import functions
+# data_list <- list(
+#   bota = bota,
+#   gene = gene,
+#   tax_table = tax_table,
+#   samples_ref = samples_ref
+# )
+# 
+# save(data_list,
+#      file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
 

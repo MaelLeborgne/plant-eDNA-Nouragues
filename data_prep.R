@@ -31,9 +31,13 @@ ref_grid <- function(){
 
 # Filtering the Data with the Name for a given Level
 select_tax <- function(Data, Level, Name){
-  
-  # Select the focus in Data
-  focus <- Data[Data[Level] == Name,]
+  if(Name=="All"){
+    focus <- Data
+  }
+  else{
+    # Select the focus in Data
+    focus <- Data[Data[Level] == Name,]
+  }
   
   # Return
   return(focus)
@@ -200,7 +204,8 @@ bota_grid_compute <- function(bota_df   = bota,
                               level     = "Family", 
                               name      = "Fabaceae", 
                               var_bota  = "Count", 
-                              user_norm = TRUE
+                              user_norm = TRUE,
+                              radius = 15
                               ){
   
   # Sélection du taxon et gestion du all
@@ -213,15 +218,15 @@ bota_grid_compute <- function(bota_df   = bota,
   
   # Choix de la métrique botanique via switch
   df <- switch(var_bota,
-               "Count"     = bota_grid_count(df, R = 15, user_norm),
+               "Count"     = bota_grid_count(df, R = radius, user_norm),
                "NCI"       = bota_grid_NCI(df, user_norm),
                "Gaussian"  = {
                  if(is.null(df)) stop("bota required for Gaussian")
                  result <- optim_gauss(bota)
                  bota_grid_Gauss(df, BETA = result$par[1], GAMMA = result$par[2], user_norm)
                },
-               "OTU"       = bota_grid_OTU(df, R = 20, user_norm),
-               "Div_alpha" = bota_grid_div_a(df, R = 20, user_norm),
+               "OTU"       = bota_grid_OTU(df, R = radius, user_norm),
+               "Div_alpha" = bota_grid_div_a(df, R = radius, user_norm),
                stop("Unknown var_bota: ", var_bota)  # gestion d'erreur
   )
   
@@ -237,7 +242,10 @@ get_FGs <-function(data){
 }
 
 # Select genetical reads with Marker and Name at a give Level
-select_genet <- function(gene, Marker, level, Name){
+select_genet <- function(genet_all = gene, 
+                         Marker = "GH", 
+                         level = "family", 
+                         Name = "All"){
   
   genet_focus <- gene[[Marker]] %>%          # Select marker
     get_FGs() %>%                            # Get Familly, Gender, species cols
@@ -249,7 +257,7 @@ select_genet <- function(gene, Marker, level, Name){
 }
 
 # Create genet grid for quantitative try
-genet_grid_count <- function(genet_focus){
+genet_grid_count <- function(genet_focus = select_genet()){
   
   # Create Grid
   grid <- ref_grid()
@@ -282,11 +290,14 @@ give_level_names <- function(Marker, Level){
   return(unique(mark_focus[[level]]))
 }
 
-genet_grid_write_all <- function(PROJECT_PATH, gene, markers, m_levels){
+genet_grid_write_all <- function(path = PROJECT_PATH, 
+                                 genet_all = gene, 
+                                 markers  ="GH", 
+                                 m_levels = "Family"){
   # For each markers
   for (m in markers) {
     # Focus marker
-    mark_focus <- gene[[m]] %>% # Select the marker
+    mark_focus <- genet_all[[m]] %>% # Select the marker
       get_FGs() # Get Familly, Gender, species cols
     # For each levels
     m_levels <- tolower(m_levels)
@@ -313,7 +324,7 @@ genet_grid_write_all <- function(PROJECT_PATH, gene, markers, m_levels){
             filter(!is.na(.data[[l]])) # col family, genus or specie
         }
         # Write
-        genet_grid_write(PROJECT_PATH, focus, fileName)
+        genet_grid_write(path, focus, fileName)
       }
     }
   }
@@ -424,14 +435,201 @@ R2_taxon <- function(Marker    = "GH",
 # m_levels <- c("Family","Genus","Species")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
 
-# # Test write (Count)
-# markers <- c("GH")
-# m_levels <- c("Family")
-# genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels, "Count")
-
-# Test write (Div_alpha)
+# # Test write
 # markers <- c("GH")
 # m_levels <- c("Family")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
 
 
+
+# ==== RICHNESS TABLE ====
+
+summary_per_clade <- function(Marker = "GH",
+                              Level  = "Family",
+                              fun_samples = function(df) df %>% filter(sample_loc != "TOTAL") %>% pull(OTU),
+                              fun_total   = function(df) df %>% filter(sample_loc == "TOTAL") %>% pull(OTU),
+                              digits = 0,
+                              per_sample = TRUE) {
+  
+  # Récupère tous les noms du clade
+  all_names <- give_level_names(Marker, Level)
+  # Grid with all names
+  genet_df_all <- genet_grid_read(n="All")
+  
+  results <- lapply(all_names, function(n) {
+    
+    # Lit les données
+    genet_df <- genet_grid_read(PROJECT_PATH,
+                                m = Marker,
+                                l = Level,
+                                n = n)
+    
+    # Extraie le vecteur selon la fonction fournie
+    vec <- fun_samples(genet_df)
+    
+    # Total, moyenne, sd
+    total <- fun_total(genet_df, genet_df_all)
+    mean_val <- mean(vec, na.rm = TRUE)
+    sd_val   <- sd(vec, na.rm = TRUE)
+    
+    # Formatage publication
+    total_fmt <- format(round(total, digits),
+                        big.mark = ",",
+                        scientific = FALSE)
+    mean_fmt <- round(mean_val, digits)
+    sd_fmt   <- round(sd_val, digits)
+    
+    if(per_sample){
+      data.frame(
+        Clade = n,
+        Metric = paste0(total_fmt, " (", mean_fmt, " ± ", sd_fmt, ")")
+      )
+    }
+    else{
+      data.frame(
+        Clade = n,
+        Metric = paste0(total_fmt)
+      )
+    }
+    
+  })
+  
+  final_df <- do.call(rbind, results)
+  return(final_df)
+}
+
+# Join metrics
+tab_OTU_stat <- function(Marker   = "GH",
+                         Level    = "Family") {
+  
+  # Richness
+  df_rich <- summary_per_clade(
+    Marker = Marker,
+    Level  = Level,
+    fun_samples = function(df) df %>% filter(sample_loc != "TOTAL") %>% pull(OTU),
+    fun_total   = function(df,df_t) df %>% filter(sample_loc == "TOTAL") %>% pull(OTU),
+    digits = 0,
+    per_sample = TRUE
+  ) %>% rename(Richness = Metric)
+  
+  # Diversity
+  df_div <- summary_per_clade(
+    Marker = Marker,
+    Level  = Level,
+    fun_samples = function(df) df %>% filter(sample_loc != "TOTAL") %>% pull(Div_alpha),
+    fun_total   = function(df, df_t) df %>% filter(sample_loc == "TOTAL") %>% pull(Div_alpha),
+    digits = 1,
+    per_sample = TRUE
+  ) %>% rename(Diversity = Metric)
+  
+  # Relative abundance
+  df_rel <- summary_per_clade(
+    Marker = Marker,
+    Level  = Level,
+    fun_samples = function(df) NULL,
+    fun_total = function(df, df_t) {
+      W_clade <- df %>% filter(sample_loc == "TOTAL") %>% pull(Weight)
+      W_all <- df_t %>% filter(sample_loc == "TOTAL") %>% pull(Weight)
+      return(W_clade * 100 / W_all)
+      },
+    digits = 2,
+    per_sample = FALSE
+  ) %>% rename(RelAb = Metric)
+  
+  # Fusion
+  df_join <- df_rich %>%
+    left_join(df_div, by = "Clade") %>%
+    left_join(df_rel, by = "Clade") %>%
+    arrange(Clade)
+  
+  return(df_join)
+}
+
+# ==== OUT OF APP ====
+
+plot_abrel_comp <- function(){
+  library(ggplot2)
+  # Genet
+  gene_stat <- tab_OTU_stat()
+  gene_stat$RelAb <- gene_stat$RelAb %>% as.numeric()
+  # Bota
+  tab <- table(bota$Family)
+  df <- as.data.frame(tab)
+  colnames(df) <- c("Clade", "Richesse")
+  df$Abond_rel <- df$Richesse*100 / sum(df$Richesse)
+  # Join
+  df_rich_comp_f <- left_join(gene_stat, df, by="Clade") %>% 
+    filter(RelAb >1) %>% select(Clade, RelAb, Abond_rel)
+  # Plot
+  ggplot(df_rich_comp_f,aes(x=RelAb,y=Abond_rel)) + 
+    geom_point() + 
+    geom_smooth(method = "lm", se = TRUE, color = "red", fill = "grey70")
+}
+
+plot_abrel_BA <- function(){
+  library(ggplot2)
+  # Genet
+  gene_stat <- tab_OTU_stat()
+  gene_stat$RelAb <- gene_stat$RelAb %>% as.numeric()
+  # Bota
+  sum_BA <- bota %>% 
+    mutate(BA_indiv = (bota$CircCorr^2) / (4 * pi * 10000)) %>% 
+    group_by(Family) %>% 
+    summarise(BA=sum(BA_indiv)) %>%
+    rename(Clade = Family)
+  # Join
+  df_rich_comp_f <- left_join(gene_stat, sum_BA, by="Clade") %>% 
+    filter(RelAb >1) %>% select(Clade, RelAb, BA)
+  # Plot
+  ggplot(df_rich_comp_f,aes(x=RelAb,y=BA)) + 
+    geom_point() + 
+    geom_smooth(method = "lm", se = TRUE, color = "red", fill = "grey70")
+}
+
+plot_abrel_BA_genus <- function(){
+  library(ggplot2)
+  # Genet
+  gene_stat <- tab_OTU_stat(Level = "Genus")
+  gene_stat$RelAb <- gene_stat$RelAb %>% as.numeric()
+  # Bota
+  sum_BA <- bota %>% 
+    mutate(BA_indiv = (bota$CircCorr^2) / (4 * pi * 10000)) %>% 
+    group_by(Genus) %>% 
+    summarise(BA=sum(BA_indiv)) %>%
+    rename(Clade = Genus)
+  # Join
+  df_rich_comp_f <- left_join(gene_stat, sum_BA, by="Clade") %>% 
+    filter(RelAb >0.01) %>% select(Clade, RelAb, BA)
+  # Plot
+  ggplot(df_rich_comp_f,aes(x=RelAb,y=BA)) + 
+    geom_point() + 
+    geom_smooth(method = "lm", se = TRUE, color = "red", fill = "grey70")
+}
+
+plot_borras_2A <- function(){
+  # Genet
+  gene_df <- genet_grid_read(n = "All") %>% 
+    filter(sample_loc != "TOTAL")
+  # Bota
+  bota_rad <- lapply(seq(5,100,5), function(R){
+    bota_df <- bota_grid_compute(
+      bota_df    = bota,
+      name       = "All",
+      var_bota   = "OTU",
+      user_norm  = FALSE,
+      radius = R
+    ) %>% select()
+    return(bota_df)
+  })
+  
+
+  # Fusion en un seul dataframe
+  final_df <- do.call(rbind, bota_rad) %>% 
+    filter(!is.na(.data[["R2"]])) %>%
+    arrange(desc(R2))
+  
+  return(final_df)
+  
+  
+  
+}

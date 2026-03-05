@@ -56,7 +56,6 @@ ui <- dashboardPage(
                 valueBoxOutput("R2", width=2),
                 DTOutput("R2_tab"),
                 box(plotOutput("renderPlot_x_y"), width=6)
-                #box(plotOutput("renderBarplot_R2_taxon"),width=12, height = "5000px")
               )
       )
     )
@@ -113,45 +112,55 @@ server <- function(input, output, session){
       input$marker, # Marker
       input$level,  # Level
       input$name    # Name
-      )
+      ) %>% filter(sample_loc != "TOTAL")
     
   })
   
   # Inventaire botanique
   bota_f <- reactive({
-    df <- bota %>% select_tax(input$level, input$name)
-    return(df)
+    
+    bota %>% select_tax(input$level, input$name)
+    
   })
   
   # Dynamic compare
   df_compare <- reactive({
-    df <- R2_taxon(Marker     = input$marker,
-                   Level      = input$level,
-                   var_bota   = input$var_bota,
-                   var_genet  = input$var_genet,
-                   user_norm  = input$norm)
-    return(df)
+    
+    df_compare_join(
+      grid_pred = genet_grid(),
+      grid_obs  = bota_grid(),
+      var_pred  = input$var_genet,
+      var_obs   = input$var_bota)
+    
+  })
+  
+  # Dynamic compare
+  df_R2 <- reactive({
+    
+    R2_taxon(Marker     = input$marker,
+             Level      = input$level,
+             var_bota   = input$var_bota,
+             var_genet  = input$var_genet,
+             user_norm  = input$norm)
+    
   })
   
   # ===== VUE GLOBALE =====
   # Plot compare
   output$renderPlot_compare <- renderPlot({
-    p1 <- plot_grid_stem(bota_grid(), bota_f(),input$var_bota) +
-      labs(title = "Bota density")
-    p2 <- plot_grid_stem(genet_grid(), bota_f(),input$var_genet)+
-      labs(title = "Genet density")
-    p3 <- plot_compare(
-      df_compare_join( # data prep
-        grid_pred = genet_grid(),
-        grid_obs  = bota_grid(),
-        var_pred  = input$var_genet,
-        var_obs   = input$var_bota
-      ),
-      bota_f() # filtered bota
-    )
-    # Plot patchwork
-    (p1 | p2 | p3) 
+    stems = FALSE
+    if(input$name != "All"){
+      stems = TRUE
+    }
+    patch_compare(var_bota = input$var_bota,
+                  var_genet = input$var_genet,
+                  b_grid = bota_grid(),
+                  g_grid = genet_grid(),
+                  b_f    = bota_f(),
+                  df_compare = df_compare(),
+                  stems  = stems)
   })
+  
   # R-squared
   output$R2 <- renderValueBox({
     r2 <- R_squared(
@@ -170,18 +179,20 @@ server <- function(input, output, session){
   })
   # Barplot R_suaqred
   output$renderBarplot_R2_taxon <- renderPlot({ 
-      barplot_R2_taxon( df_compare()) 
+      barplot_R2_taxon( df_R2()) 
       },
-    height = function() {nrow(df_compare()) * 40}
+    height = function() {nrow(df_R2()) * 40}
   )
+  
   # Tableau de R2
   output$R2_tab <- renderDT({
     datatable(
-      df_compare(),        # dataframe
+      df_R2(),        # dataframe
       options = list(pageLength = 10), # 10 lignes par page
       rownames = TRUE
     )
   })
+  
   # Plot 2D Bota / Genet
   output$renderPlot_x_y <- renderPlot({
     plot_x_y(
@@ -195,6 +206,19 @@ server <- function(input, output, session){
       y_param = paste0("Genet :",input$var_genet)
       )
   })
+  
+  # Tableau de Richness
+  # output$tab_rich <- renderDT({
+  #   datatable(
+  #     tab_OTU_stat(
+  #       Marker = input$marker,
+  #       Name = 
+  #     ),        # dataframe
+  #     options = list(pageLength = 10), # 10 lignes par page
+  #     rownames = TRUE
+  #   )
+  # })
+  
 }
 
 # ===== DAHBORD LAUNCH =====
