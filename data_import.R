@@ -15,25 +15,6 @@ library(vegan)
 # ===== Source data prep =====
 source("data_prep.R")
 
-# ===== GENERAL =====
-# Create reference dataframe for sample name and position
-create_sample_ref <- function(PROJECT_PATH){
-  # Import physical data of samples
-  data_samples <- read.table(
-    "/home/jean/Bureau/2026_Stage_ADNe/doi_10_5061_dryad_dc28m__v20181029/Zinger_et_al_metabar_PP1_samples.txt",
-    header = TRUE,
-    comment.char = "#"
-  )
-  # Select and split pcr
-  sample_ref <- data_samples %>%
-    select(pcr,x,y) %>%
-    separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
-    distinct(sample_loc, x, y)
-  
-  # Return Ref
-  sample_ref
-}
-
 # ==== BOTA ====
 import_bota <- function(PROJECT_PATH){
   # Import CSV
@@ -102,7 +83,7 @@ sample_seq_count <- function(genet_focus = select_genet()){
   sample_shannon <- data.frame(
     sample_id = rownames(sample_matrix),
     #Q1 = vegan::renyi(sample_matrix,hill=TRUE)
-    Div_alpha = diversity(sample_matrix, index = "shannon")
+    Shannon = diversity(sample_matrix, index = "shannon")
   )
   
   # Join per samples
@@ -119,7 +100,7 @@ sample_seq_count <- function(genet_focus = select_genet()){
   summary_df <- data.frame(
     sample_id = "TOTAL_",
     OTU = total_otu,
-    Div_alpha = round(total_div,2),
+    Shannon = round(total_div,2),
     Weight = total_weight
   )
   
@@ -140,7 +121,7 @@ loc_mean <- function(sample_df = sample_seq_count()){
     summarise(
       Weight    = mean(.data[["Weight"]]   , na.rm = TRUE),
       OTU       = mean(.data[["OTU"]]      , na.rm = TRUE),
-      Div_alpha = mean(.data[["Div_alpha"]], na.rm = TRUE)
+      Shannon = mean(.data[["Shannon"]], na.rm = TRUE)
       )
   
   # Add (x,y) with sample_ref
@@ -152,7 +133,7 @@ loc_mean <- function(sample_df = sample_seq_count()){
     mutate(
       Weight       = replace_na(.data[["Weight"]],    0),
       OTU          = replace_na(.data[["OTU"]],       0),
-      Div_alpha    = replace_na(.data[["Div_alpha"]], 0)
+      Shannon    = replace_na(.data[["Shannon"]], 0)
       ) %>%
     mutate(
       Weight_density = normalization(Weight)
@@ -171,46 +152,187 @@ get_rank <- function(x, rank) {
   if(length(val) == 0) NA else val
 }
 
-# Fonction to create taxid ref for local genet data from ncbi
-create_taxid_ref <- function(){
-  # Take all unique taxid from clean genet data
-  all_unique_taxid <- c(gene$GH$taxid, 
-                        gene$`18S`$taxid, 
+# Get classification
+get_all_classification <- function(){
+  # Take all unique taxid
+  all_unique_taxid <- c(gene$GH$taxid,
+                        gene$`18S`$taxid,
                         gene$ITS$taxid) %>% unique()
   
-  # from unique taxid import list of full path
+  # Get full taxonomy
   taxo <- classification(all_unique_taxid, "ncbi")
-  
-  # Import F, G, s from taxo thanks to get.rank()
-  tax_table <- map_dfr(taxo, ~tibble(
-    family  = get_rank(.x, "family"),
-    genus   = get_rank(.x, "genus"),
-    species = get_rank(.x, "species")
-  ))
-  
-  # remove the genus from the specie
-  tax_table$species <- word(tax_table$species, 2) # keep the second word
-  
-  # Add taxid to FGs
-  tax_table$taxid <- all_unique_taxid
-  
-  # Return
-  tax_table
+  return(taxo)
 }
+
+# Create taxid ref
+create_taxid_ref <- function(taxo){
+  
+  # Loop on each taxid
+  tax_table <- map_dfr(names(taxo), function(id){
+    
+    x <- taxo[[id]]
+    
+    tibble(
+      taxid   = as.integer(id),
+      id_rank = tail(x$rank, 1),
+      id_accuracy = length(x$rank),
+      family  = get_rank(x, "family"),
+      genus   = get_rank(x, "genus"),
+      species = get_rank(x, "species"),
+      
+      # Detect if Embryophyta is present in lineage
+      is_plant = any(x$name == "Embryophyta")
+    )
+  })
+  
+  # # No family identification
+  # tax_table$no_family <- is.na(tax_table$family)
+  # 
+  # # Monocot
+  # not_trees <- c("Poaceae","Arecaceae","Araceae")
+  # 
+  # # Species
+  # tax_table$not_na_sp <- !is.na(tax_table$species)
+  # 
+  # # Valid species name
+  # tax_table$valid_sp_name <- tax_table$species %in% tax_valid_sp(tax_table)
+  # 
+  # # Growth form
+  # library(readxl)
+  # plant_growth <- read_excel("/home/jean/Bureau/ADNe_Nourague_2026/METABAR_plantes/metadata/Plants_Nouragues2001.xls")
+  # 
+  # tax_table$exist_in_plant_growth <- tax_table$species %in% plant_growth$species
+  # 
+  return(tax_table)
+}
+
+genet_filter_tax_table <- function(genet_df){
+  
+  return(genet_filterd)
+}
+
+check_gf <- function(sp){
+  
+  res <- occ_search(
+    scientificName = sp,
+    country = "GF",
+    limit = 1
+  )
+  nrow(res$data) > 0
+}
+
+check_gf_all <- function(){
+  library(rgbif)
+  
+  # Clean species name
+  sp_clean <- tax_sp_vec(tax_table)
+  
+  # Get GBIF usage Keys
+  gbif_match <- name_backbone(name = sp_clean)
+  
+  # Get GBIF count of observations for each species
+  presence_GF <- map_int(
+    gbif_match$usageKey,
+    ~occ_count(taxonKey = .x, country = "GF")
+  )
+  # check if count > 0
+  tax_table$in_guyane <- presence_GF > 0
+  
+  # Apply test
+  gf_presence <- tibble(
+    species = sp_clean,
+    present_GF = sapply(sp_clean, check_gf)
+  )
+}
+
+clean_species <- function(x){
+  
+  x %>%
+    
+    # enlever cf / aff
+    gsub(" cf\\..*", "", .) %>%
+    gsub(" aff\\..*", "", .) %>%
+    
+    # # enlever sp.
+    # gsub(" sp\\..*", "", .) %>%
+    
+    # enlever collecteurs
+    gsub(" [A-Z][a-z]+ [0-9].*", "", .) %>%
+    
+    # enlever hybrides
+    gsub(" x .*", "", .) %>%
+    
+    trimws()
+}
+
+tax_valid_sp <- function(tax_table){
+  sp_vec <- tax_table %>% filter(!is.na(species)) %>% pull(species)
+  # Remove out format
+  sp_clean <- clean_species(sp_vec)
+  # Garder seulement les binomes
+  sp_clean <- sp_clean[grepl("^[A-Z][a-z]+ (sp\\.|[a-z-]+)$", sp_clean)]
+  return(sp_clean)
+}
+
 
 # # Plants zinger
 # setwd(paste0(PROJECT_PATH,"zinger/"))
 # zinger_plant <- read_obifasta("Zinger_et_al_metabar_PP1_Plants.uniq.fasta")
 
+# ===== GENERAL =====
+
+# Create reference dataframe for sample name and position
+create_sample_ref <- function(PROJECT_PATH){
+  # Import physical data of samples
+  data_samples <- read.table(
+    "/home/jean/Bureau/ADNe_Nourague_2026/zinger/Zinger_et_al_metabar_PP1_samples.txt",
+    header = TRUE,
+    comment.char = "#"
+  )
+  # Select and split pcr
+  sample_ref <- data_samples %>%
+    select(pcr,x,y) %>%
+    separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
+    distinct(sample_loc, x, y)
+  
+  # Return Ref
+  sample_ref
+}
+
+# ==== ABIOTIC ====
+
+import_abiotic <- function(){
+  
+  data_samples <- read.table(
+    "/home/jean/Bureau/ADNe_Nourague_2026/zinger/Zinger_et_al_metabar_PP1_samples.txt",
+    header = TRUE,
+    comment.char = "#"
+  )
+  
+  # Select and split pcr
+  abiotic <- data_samples %>%
+    separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
+    filter(!control)
+  
+  # Return Ref
+  return(abiotic)
+}
+
 # ==== CREATE AND SAVE DATA ====
-# # Import functions
-# data_list <- list(
-#   bota = bota,
-#   gene = gene,
-#   tax_table = tax_table,
-#   samples_ref = samples_ref
-# )
-# 
-# save(data_list,
-#      file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport")
+# Create
+bota <- import_bota(PROJECT_PATH)   # Bota
+gene <- import_genet(PROJECT_PATH)  # Genet
+taxo <- get_all_classification()    # Classification genet
+tax_table <- create_taxid_ref(taxo) # Taxid
+samples_ref <- create_sample_ref()  # Samples names / position
+abiotic <- import_abiotic()         # Abiotic
+
+# List
+save(
+  bota,
+  gene,
+  tax_table,
+  samples_ref,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport.RData"
+)
 

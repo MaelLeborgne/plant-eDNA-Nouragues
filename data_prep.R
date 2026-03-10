@@ -26,6 +26,9 @@ ref_grid <- function(){
   grid$i <- grid$x / 10
   grid$j <- grid$y / 10
   
+  grid <- left_join(grid, samples_ref, by = c("x","y")) %>%
+    rename(sample_id = sample_loc)
+  
   return(grid)
 }
 
@@ -54,17 +57,21 @@ normalization <- function(count) {
 }
 
 # Generic function to compute bota grid
-bota_grid_engine <- function(bota_focus, 
+bota_grid_engine <- function(bota_focus = bota, 
                              R = 20,
-                             fun_pixel,
-                             var_name = "value",
-                             normalize = TRUE){
-  # Ref grid
-  grid <- ref_grid()
-  # Initailisation
-  grid[[var_name]] <- NA
+                             fun_pixel = function(df, sel, dij){length(sel)},
+                             var_name = "Count",
+                             normalize = TRUE,
+                             return_comm = FALSE){
   
-  # Iterate over pixels
+  grid <- ref_grid()
+  
+  if(return_comm){
+    grid[[var_name]] <- vector("list", nrow(grid))
+  } else {
+    grid[[var_name]] <- NA_real_
+  }
+  
   for (pixel in 1:nrow(grid)) {
     
     px <- grid$x[pixel]
@@ -76,9 +83,21 @@ bota_grid_engine <- function(bota_focus,
     sel <- which(dij < R & dij > 0)
     
     if (length(sel) == 0) {
-      grid[[var_name]][pixel] <- 0
+      
+      if(return_comm){
+        grid[[var_name]][[pixel]] <- table()
+      } else {
+        grid[[var_name]][pixel] <- 0
+      }
+      
     } else {
-      grid[[var_name]][pixel] <- fun_pixel(bota_focus, sel, dij)
+      
+      if(return_comm){
+        grid[[var_name]][[pixel]] <- fun_pixel(bota_focus, sel, dij)
+      } else {
+        grid[[var_name]][pixel] <- fun_pixel(bota_focus, sel, dij)
+      }
+      
     }
   }
   
@@ -171,7 +190,7 @@ optim_gauss <- function(genet_grid) {
 }
 
 # OTU
-bota_grid_OTU <- function(bota_focus, R = 20, user_norm){
+bota_grid_OTU <- function(bota_focus, R = 15, user_norm){
   # Give calcul to generic function
   bota_grid_engine(
     bota_focus,
@@ -184,13 +203,27 @@ bota_grid_OTU <- function(bota_focus, R = 20, user_norm){
   )
 }
 
-# Div_alpha
+bota_grid_OTU_matrice <- function(bota_focus, R = 15){
+  # Give calcul to generic function
+  bota_grid_engine(
+    bota_focus,
+    R = R,
+    var_name = "OTU",
+    normalize = FALSE,
+    return_comm = TRUE, # Matrice
+    fun_pixel = function(df, sel, dij){
+      table(df$Species[sel])
+    }
+  )
+}
+
+# Shannon
 bota_grid_div_a <- function(bota_focus, R = 20, user_norm){
   # Give calcul to generic function
   bota_grid_engine(
     bota_focus,
     R = R,
-    var_name = "Div_alpha",
+    var_name = "Shannon",
     normalize = user_norm,
     fun_pixel = function(df, sel, dij){
       sp_counts <- table(df$Species[sel])
@@ -202,19 +235,15 @@ bota_grid_div_a <- function(bota_focus, R = 20, user_norm){
 # Apply conditions for bota grid calcul
 bota_grid_compute <- function(bota_df   = bota, 
                               level     = "Family", 
-                              name      = "Fabaceae", 
+                              name      = "All", 
                               var_bota  = "Count", 
                               user_norm = TRUE,
+                              return_comm = FALSE,
                               radius = 15
                               ){
   
   # Sélection du taxon et gestion du all
   df <- if(name == "All") bota_df else select_tax(bota_df, level, name)
-  
-  # # Retourne une grille vide si aucun individu
-  # if(nrow(df) == 0){
-  #   warning("No individuals for this selection.")
-  # }
   
   # Choix de la métrique botanique via switch
   df <- switch(var_bota,
@@ -226,7 +255,8 @@ bota_grid_compute <- function(bota_df   = bota,
                  bota_grid_Gauss(df, BETA = result$par[1], GAMMA = result$par[2], user_norm)
                },
                "OTU"       = bota_grid_OTU(df, R = radius, user_norm),
-               "Div_alpha" = bota_grid_div_a(df, R = radius, user_norm),
+               "OTU_mat"   = bota_grid_OTU_matrice(df, R = radius),
+               "Shannon" = bota_grid_div_a(df, R = radius, user_norm),
                stop("Unknown var_bota: ", var_bota)  # gestion d'erreur
   )
   
@@ -236,8 +266,15 @@ bota_grid_compute <- function(bota_df   = bota,
 # ===== GENET =====
 
 # Get Familly, Genus, species from faxid reference
-get_FGs <-function(data){
-  data <- left_join(data, tax_table, by="taxid")
+# and filter trees geographical
+get_classification <-function(data){
+  # Apply filters on tax_table
+  ## Plants
+  tax_table <- tax_table %>% filter(is_plant)
+  ## Geographical
+  
+  # Keep only taxid in filtered tax_table
+  data <- inner_join(data, tax_table, by="taxid")
   return(data)
 }
 
@@ -248,7 +285,7 @@ select_genet <- function(genet_all = gene,
                          Name = "All"){
   
   genet_focus <- gene[[Marker]] %>%          # Select marker
-    get_FGs() %>%                            # Get Familly, Gender, species cols
+    get_classification() %>%                            # Get Familly, Gender, species cols
     select_tax(level, Name) %>% # Select taxa
     filter(!is.na(.data[[level]]))           # Remove NA
   
@@ -284,7 +321,7 @@ give_level_names <- function(Marker, Level){
   level <- tolower(Level)
   # Focus marker
   mark_focus <- gene[[Marker]] %>% # Select the marker
-    get_FGs() %>% # Get Familly, Gender, species cols
+    get_classification() %>% # Get Familly, Gender, species cols
     filter(!is.na(.data[[level]])) # remove NA
   # names in the level
   return(unique(mark_focus[[level]]))
@@ -298,7 +335,7 @@ genet_grid_write_all <- function(path = PROJECT_PATH,
   for (m in markers) {
     # Focus marker
     mark_focus <- genet_all[[m]] %>% # Select the marker
-      get_FGs() # Get Familly, Gender, species cols
+      get_classification() # Get Familly, Gender, species cols
     # For each levels
     m_levels <- tolower(m_levels)
     for (l in m_levels) {
@@ -357,7 +394,9 @@ df_compare_join <- function(grid_pred  = genet_grid_read(),
     rename(value_obs = !!var_obs)         # rename chosen botanical variable
   # Add error column
   df_compare <- df_compare %>%
-    mutate(err_abs = value_pred - value_obs)
+    mutate(
+      err_abs = value_pred - value_obs
+      )
   # Return
   return(df_compare)
 }
@@ -376,6 +415,10 @@ R_squared <- function(df_compare){
   R2 <- 1 - (SS_residual / SS_total)
   
   return(R2)
+}
+
+corr_b_g <- function(df_compare){
+  cor.test(df_compare[["value_obs"]], df_compare[["value_pred"]], method = "pearson")$estimate
 }
 
 # Return Tax dataframe with all R2
@@ -435,8 +478,8 @@ R2_taxon <- function(Marker    = "GH",
 # m_levels <- c("Family","Genus","Species")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
 
-# # Test write
-# markers <- c("GH")
+# Test write
+# markers <- c("GH","ITS","18S")
 # m_levels <- c("Family")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
 
@@ -488,7 +531,7 @@ summary_per_clade <- function(Marker = "GH",
     else{
       data.frame(
         Clade = n,
-        Metric = paste0(total_fmt)
+        Metric = total
       )
     }
     
@@ -516,8 +559,8 @@ tab_OTU_stat <- function(Marker   = "GH",
   df_div <- summary_per_clade(
     Marker = Marker,
     Level  = Level,
-    fun_samples = function(df) df %>% filter(sample_loc != "TOTAL") %>% pull(Div_alpha),
-    fun_total   = function(df, df_t) df %>% filter(sample_loc == "TOTAL") %>% pull(Div_alpha),
+    fun_samples = function(df) df %>% filter(sample_loc != "TOTAL") %>% pull(Shannon),
+    fun_total   = function(df, df_t) df %>% filter(sample_loc == "TOTAL") %>% pull(Shannon),
     digits = 1,
     per_sample = TRUE
   ) %>% rename(Diversity = Metric)
@@ -530,7 +573,7 @@ tab_OTU_stat <- function(Marker   = "GH",
     fun_total = function(df, df_t) {
       W_clade <- df %>% filter(sample_loc == "TOTAL") %>% pull(Weight)
       W_all <- df_t %>% filter(sample_loc == "TOTAL") %>% pull(Weight)
-      return(W_clade * 100 / W_all)
+      return(as.numeric(W_clade * 100 / W_all))
       },
     digits = 2,
     per_sample = FALSE
@@ -607,29 +650,692 @@ plot_abrel_BA_genus <- function(){
 }
 
 plot_borras_2A <- function(){
-  # Genet
+  library(dplyr)
+  library(purrr)
+  library(tidyr)
+  library(ggplot2)
+  
+  # ---- Genet ----
   gene_df <- genet_grid_read(n = "All") %>% 
-    filter(sample_loc != "TOTAL")
-  # Bota
-  bota_rad <- lapply(seq(5,100,5), function(R){
-    bota_df <- bota_grid_compute(
-      bota_df    = bota,
-      name       = "All",
-      var_bota   = "OTU",
-      user_norm  = FALSE,
-      radius = R
-    ) %>% select()
-    return(bota_df)
+    filter(sample_loc != "TOTAL") %>%
+    select(x, y, OTU) %>%
+    rename(DNA = OTU)
+  
+  # ---- Bota ----
+  radii <- seq(5, 100, 5)
+  
+  bota_rad <- map(radii, function(R){
+    
+    bota_grid_compute(
+      bota_df   = bota,
+      name      = "All",
+      var_bota  = "OTU",
+      user_norm = FALSE,
+      radius    = R
+    ) %>% 
+      select(x, y, OTU) %>%
+      rename(value = OTU) %>%
+      mutate(method = as.character(R))
   })
   
+  bota_rad <- bind_rows(bota_rad)
+  
+  # ---- Join ----
+  # Ajouter DNA
+  gene_long <- gene_df %>%
+    rename(value = DNA) %>%
+    mutate(method = "DNA")
+  
+  # Fusion long
+  final_long <- bind_rows(gene_long, bota_rad)
+  
+  # Garcer l'ordre
+  final_long$method <- factor(
+    final_long$method,
+    levels = c("DNA", as.character(radii))
+  )
+  
+  # ---- Boxplot ----
+  ggplot(final_long, aes(x = method, y = value)) +
+    geom_boxplot() +
+    labs(x = "Radius / Method", y = "OTU richness") +
+    theme_bw()
+  
+}
 
-  # Fusion en un seul dataframe
-  final_df <- do.call(rbind, bota_rad) %>% 
-    filter(!is.na(.data[["R2"]])) %>%
-    arrange(desc(R2))
+plot_borras_2E <- function(){
+
+  library(dplyr)
+  library(purrr)
+  library(vegan)
+  library(ggplot2)
   
-  return(final_df)
+  radii <- seq(10,100,5)
   
+  cor_results <- map(radii, function(rad){
+    
+    # ---- Stem census (bota) ----
+    bota_df <- bota_grid_engine(
+      R = rad,
+      var_name = "OTU",
+      normalize = FALSE,
+      return_comm = TRUE, # Matrice
+      fun_pixel = function(df, sel, dij){
+        if(length(sel) == 0) return(integer(0))
+        table(df$Species[sel])
+      }
+    )
+    
+    stem_comm <- bind_rows(
+      lapply(seq_len(nrow(bota_df)), function(i){
+        
+        tab <- bota_df$OTU[[i]]
+        if(length(tab) == 0) return(NULL)
+        
+        df <- as.data.frame(t(as.numeric(tab)))
+        names(df) <- names(tab)
+        
+        df$sample_id <- bota_df$sample_id[i]
+        
+        df
+      })
+    )
+    
+    stem_comm[is.na(stem_comm)] <- 0
+    
+    # mettre sample_id en rownames
+    rownames(stem_comm) <- stem_comm$sample_id
+    stem_comm$sample_id <- NULL
+    
+    # matrice
+    stem_comm <- as.matrix(stem_comm)
+    
+    # richesse
+    stem_rich <- rowSums(stem_comm > 0)
+    
+    min_n <- min(stem_rich[stem_rich > 0])
+    keep <- stem_rich >= min_n
+    stem_comm_filtered <- stem_comm[keep, , drop = FALSE]
+    
+    # rarefaction basée sur le nombre d'individus
+    stem_rare <- vegan::rarefy(stem_comm_filtered, sample = min_n)
+    
+    # ---- eDNA ----
+    dna_comm <- readRDS("/home/jean/Bureau/GH_clean/GH_mblist_annot_metabar_clean_clust97_RAR.rds") 
+    dna_comm <- dna_comm$reads
+    dna_rich <- rowSums(dna_comm > 0)
+    
+    # ---- Intersect ----
+    common <- intersect(names(stem_rich), names(dna_rich))
+    
+    # ---- Pearson correlation ----
+    test <- cor.test(
+      stem_rich[common],
+      dna_rich[common],
+      method = "pearson"
+    )
+    
+    # return
+    tibble(
+      radius = rad,
+      r      = test$estimate,
+      CI_low = test$conf.int[1],
+      CI_high= test$conf.int[2],
+      p      = test$p.value
+    )
+    
+  })
   
+  # ---- Bind ----
+  cor_results <- bind_rows(cor_results)
+  
+  # ---- Plot ----
+  
+  ggplot(cor_results, aes(x = radius, y = r)) +
+    geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+    geom_point(
+      size = 4,
+      shape = 21,
+      fill = "white",
+      color = "black",
+      stroke = 1
+    ) +
+    geom_errorbar(
+      aes(ymin = CI_low, ymax = CI_high),
+      width = 1,
+      colour = "black"
+    ) +
+    scale_x_continuous(
+      breaks = seq(10, 100, 10)
+    ) +
+    theme_bw() +
+    labs(
+      x = "Radius (m)",
+      y = "Pearson correlation",
+      title = "Stem OTU vs DNA OTU richness across spatial scales"
+    )
+}
+
+plot_bota_intro <- function(){
+  library(ggplot2)
+  
+  # Supposons que ref_grid() renvoie un data.frame avec X et Y
+  grid_df <- ref_grid()  # doit avoir colonnes X, Y
+  
+  ggplot(data = bota, aes(x = Xfield, y = Yfield)) +
+    
+    # points principaux
+    geom_point(
+      aes(color = .data[["Family"]], size = CircCorr),
+      shape = 21,
+      fill = NA,
+      stroke = 0.5
+    ) +
+    
+    # croix noires pour la grille
+    geom_point(
+      data = grid_df,
+      aes(x = x, y = y),
+      shape = 4,    # shape 4 = croix
+      color = "black",
+      size = 2
+    ) +
+    
+    # cadre autour de la parcelle
+    geom_rect(
+      aes(xmin = 0, xmax = 300, ymin = 0, ymax = 400),
+      fill = NA,
+      color = "black",
+      linewidth = 0.5
+    ) +
+    
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      text = element_text(size = 16)
+      ) +
+    coord_fixed()
+}
+
+plot_tab_familly <- function(){
+  
+  # Genet
+  tab_genet <- tab_OTU_stat()
+  tab_genet$RelAb <- as.numeric(tab_genet$RelAb)
+  # Other : calcul
+  other_RelAb <- tab_genet %>% 
+    select(RelAb) %>% 
+    filter(RelAb < 1) %>% 
+    sum()
+  # Other : line
+  genet_other <- data.frame(
+    Clade = "Other",
+    RelAb = other_RelAb
+  )
+  # Join >1% and other
+  tab_genet <- tab_genet %>% 
+    filter(RelAb >= 1) %>%
+    bind_rows(genet_other) %>%
+    select(Clade, RelAb) %>%
+    rename(Genet_ab_rel = RelAb)
+  
+  # Bota
+  tab_bota <- table(bota$Family)
+  tab_bota <- as.data.frame(tab_bota)
+  colnames(tab_bota) <- c("Clade", "Bota_ab_rel")
+  tab_bota$Bota_ab_rel <- tab_bota$Bota_ab_rel*100 / sum(tab_bota$Bota_ab_rel)
+  # Other : calcul
+  other_RelAb <- tab_bota %>% 
+    select(Bota_ab_rel) %>% 
+    filter(Bota_ab_rel < 1) %>% 
+    sum()
+  # Other : line
+  bota_other <- data.frame(
+    Clade = "Other",
+    Bota_ab_rel = other_RelAb
+  )
+  # Join >1% and other
+  tab_bota <- tab_bota %>% 
+    filter(Bota_ab_rel >= 1) %>%
+    bind_rows(bota_other) %>%
+    select(Clade, Bota_ab_rel)
+  # Round
+  tab_bota$Bota_ab_rel <- tab_bota$Bota_ab_rel %>% round(digit=2)
+  
+  # Join
+  df_rel_ab <- inner_join(tab_genet, tab_bota, by="Clade") %>%
+    arrange(ifelse(Clade == "Other", 1, 0), desc(Genet_ab_rel))
+  
+  # # Replace NA by 0
+  # df_rel_ab <- df_rel_ab %>%
+  #   mutate(Bota_ab_rel = replace_na(Bota_ab_rel, 0)) %>%
+  #   mutate(Genet_ab_rel = replace_na(Genet_ab_rel, 0))
+  
+  # Mettre en format long
+  df_long <- df_rel_ab %>%
+    pivot_longer(
+      cols = c(Genet_ab_rel, Bota_ab_rel),
+      names_to = "Type",
+      values_to = "Abondance"
+    )
+  
+  # Spearman correlation with p-value
+  spearman_test <- cor.test(df_rel_ab$Genet_ab_rel,
+                            df_rel_ab$Bota_ab_rel,
+                            method = "spearman")
+  
+  # Résultat
+  rho <- spearman_test$estimate   # rho
+  pval <- spearman_test$p.value    # p-value
+  
+  # Formater la p-value en texte lisible
+  p_text <- if (pval < 0.001) {
+    "< 0.001"
+  } else if (pval < 0.01) {
+    "< 0.01"
+  } else if (pval < 0.05) {
+    "< 0.05"
+  } else if (pval < 0.1) {
+    "< 0.1"
+  } else {
+    "n.s."
+  }
+  
+  # Barplot horizontal avec texte de corrélation
+  ggplot(df_long, aes(x = Abondance, y = reorder(Clade, Abondance), fill = Type)) +
+    geom_col(position = "dodge") +
+    labs(
+      x = "Abondance relative (%)",
+      y = "Clade",
+      fill = "Type d'inventaire",
+      title = "Richesse taxonomique relative par famille selon l'inventaire Botanique et Génétique (GH)"
+    ) +
+    theme_minimal() +
+    scale_fill_manual(values = c("Genet_ab_rel" = "#1f78b4", "Bota_ab_rel" = "#33a02c")) +
+    annotate(
+      "text",
+      x = max(df_long$Abondance) * 0.7,  # position horizontale
+      y = 5,                            # position verticale (au-dessus du bas du plot)
+      label = paste0("Spearman 'rho = ", round(rho, 2), "\n p",p_text),
+      hjust = 0.5,                          # aligné à gauche
+      size = 3.5,
+      color = "black"
+    ) +
+    theme(
+      plot.title = element_text(size = 11, face = "bold"),
+      axis.line = element_line(color = "gray"),  # Lignes des axes en noir
+      axis.text = element_text(color = "black"),  # Texte des axes en noir
+      axis.ticks = element_line(color = "black")  # Ticks des axes en noir
+    )
+  
+}
+
+plot_tab_familly_multi <- function() {
+  
+  # Liste des marqueurs
+  markers <- c("GH", "ITS", "18S")
+  df_list <- list()
+  corr_list <- list()
+  
+  # ---- Botanique ----
+  tab_bota <- as.data.frame(table(bota$Family))
+  colnames(tab_bota) <- c("Clade", "Bota_ab_rel")
+  tab_bota$Bota_ab_rel <- tab_bota$Bota_ab_rel * 100 / sum(tab_bota$Bota_ab_rel)
+  
+  # # Calcul "Other" Bota
+  # other_RelAb_bota <- tab_bota %>% 
+  #   filter(Bota_ab_rel < 1) %>% 
+  #   summarise(sum = sum(Bota_ab_rel)) %>% 
+  #   pull(sum)
+  # 
+  # bota_other <- data.frame(Clade = "Other", Bota_ab_rel = other_RelAb_bota)
+  # 
+  # tab_bota <- tab_bota %>% 
+  #   filter(Bota_ab_rel >= 1) %>%
+  #   bind_rows(bota_other)
+  
+  # ---- Boucle sur chaque marqueur ----
+  for(marker in markers) {
+    
+    # Génétique
+    tab_genet <- tab_OTU_stat(Marker = marker) %>%
+      rename(Genet_ab_rel = RelAb) %>%
+      select(-Richness,-Diversity)
+    tab_genet$Genet_ab_rel <- as.numeric(tab_genet$Genet_ab_rel) 
+    
+    # # Calcul "Other"
+    # other_RelAb <- tab_genet %>% 
+    #   filter(Genet_ab_rel < 1) %>% 
+    #   summarise(sum = sum(Genet_ab_rel)) %>% 
+    #   pull(sum)
+    # 
+    # genet_other <- data.frame(Clade = "Other", Genet_ab_rel = other_RelAb)
+    # 
+    # tab_genet <- tab_genet %>% 
+    #   filter(Genet_ab_rel >= 1) %>%
+    #   bind_rows(genet_other)
+    
+    # Ne garder que les familles présentes en botanique
+    df_rel_ab <- semi_join(tab_genet, tab_bota, by = "Clade") %>%
+      left_join(tab_bota, by = "Clade") %>%
+      mutate(
+        Genet_ab_rel = replace_na(Genet_ab_rel, 0),
+        Bota_ab_rel = replace_na(Bota_ab_rel, 0)
+      )
+    
+    # # test sans other
+    # df_rel_ab <- tab_genet %>% select(Clade,RelAb)
+    
+    # Ajouter colonne Marker
+    df_rel_ab$Marker <- marker
+    df_list[[marker]] <- df_rel_ab
+    
+    # Pearson correlation
+    pearson_test <- cor.test(df_rel_ab$Genet_ab_rel, df_rel_ab$Bota_ab_rel, method = "pearson")
+    r <- pearson_test$estimate
+    pval <- pearson_test$p.value
+    
+    p_text <- if(pval < 0.001) "< 0.001" 
+    else if(pval < 0.01) "< 0.01" 
+    else if(pval < 0.05) "< 0.05" 
+    else if(pval < 0.1) "< 0.1" 
+    else "n.s."
+    
+    corr_list[[marker]] <- data.frame(
+      Marker = marker,
+      r = round(r, 3),
+      p_text = p_text
+    )
+  }
+  
+  # Fusionner tous les marqueurs
+  df_all <- bind_rows(df_list)
+  
+  # Mettre en format long
+  df_long <- df_all %>%
+    pivot_longer(cols = c(Genet_ab_rel, Bota_ab_rel),
+                 names_to = "Type",
+                 values_to = "Abondance") %>%
+    mutate(
+      Label = case_when(
+        Type == "Bota_ab_rel" ~ "Bota",
+        Marker == "GH" ~ "GH",
+        Marker == "ITS" ~ "ITS",
+        Marker == "18S" ~ "18S"
+      ),
+      Label = factor(Label, levels = c("Bota", "GH", "18S", "ITS"))  # ordre vertical des barres
+    )
+  
+  # Couleurs
+  my_colors <- c("Bota" = "#33a02c", "GH" = "#1f78b4", "ITS" = "#ff7f00", "18S" = "#e31a1c")
+  
+  # Barplot
+  p <- ggplot(df_long, aes(x = Abondance, y = reorder(Clade, Abondance), fill = Label)) +
+    geom_col(position = "dodge") +
+    labs(
+      x = "Abondance relative (%)",
+      y = "Clade",
+      fill = "Type/Marqueur",
+      title = "Abondance relative par famille selon l'inventaire Botanique et Génétique"
+    ) +
+    scale_fill_manual(values = my_colors) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      text = element_text(size = 13),
+      axis.line = element_line(color = "gray"),
+      axis.text = element_text(color = "black"),
+      axis.ticks = element_line(color = "black")
+    )
+  
+  # Ajouter les annotations de corrélation pour chaque marqueur
+  corr_df <- bind_rows(corr_list)
+  for(i in 1:nrow(corr_df)){
+    p <- p + annotate(
+      "text",
+      x = max(df_long$Abondance) * 0.7,
+      y = i*3 + 3,
+      label = paste0("Pearson ",corr_df$Marker[i], ":\nr = ", corr_df$r[i], "\np ", corr_df$p_text[i]),
+      hjust = 0.5,
+      size = 4,
+      color = "black"
+    )
+  }
+  
+  return(p)
+}
+
+plot_compare_OTU_grid <- function(){
+  
+  grid_pred <- genet_grid_read(
+    PROJECT_PATH,
+    "GH", # Marker
+    "Family",  # Level
+    "Fabaceae"    # Name
+    ) %>% filter(sample_loc != "TOTAL")
+  
+  grid_obs  <- bota_grid_compute(
+    bota_df    = bota,
+    level      = "Family",
+    name       = "Fabaceae",
+    var_bota   = "OTU",
+    user_norm  = FALSE,
+    radius = 10
+    )
+  
+  plot_genet <- plot_grid(grid_pred,var="OTU")+ labs(title = "Genet OTU Richness Fabaceae")
+  plot_bota <- plot_grid(grid_obs,var="OTU")+ labs(title = "Bota Richness Fabaceae (R=10)")
+  plot_bota | plot_genet 
+  
+}
+
+plot_compare_div_grid <- function(){
+  
+  grid_pred <- genet_grid_read(
+    PROJECT_PATH,
+    "GH", # Marker
+    "Family",  # Level
+    "Fabaceae"    # Name
+  ) %>% filter(sample_loc != "TOTAL")
+  
+  grid_obs  <- bota_grid_compute(
+    bota_df    = bota,
+    level      = "Family",
+    name       = "Fabaceae",
+    var_bota   = "Shannon",
+    user_norm  = FALSE,
+    radius = 15
+  )
+  
+  plot_genet <- plot_grid(grid_pred,var="Shannon") + 
+    labs(title = "Genet Shannon Fabaceae")
+  plot_bota <- plot_grid(grid_obs,var="Shannon") + 
+    labs(title = "Bota Shannon Fabaceae (R=15)")
+  
+  plot_bota | plot_genet 
+  
+}
+
+
+barplot_class_rank <- function(Marker = "GH"){
+  library(ggplot2)
+  library(ggrepel)
+  
+  # Liste des marqueurs
+  markers <- c("GH", "ITS", "18S")
+  df_list <- list()
+  
+  # ---- Boucle sur chaque marqueur ----
+  for(marker in markers) {
+    
+    genet <- select_genet(gene, Marker = marker) %>%
+      group_by(id_rank) %>%
+      summarise(
+        rank_count = n()
+      ) %>%
+      mutate(
+        rank_percent = rank_count*100 / sum(rank_count)
+      )
+    
+    genet_percent <- percent_other(
+      df = genet,
+      var_ref = "id_rank",
+      var_per = "rank_percent",
+      treshold = 5
+    ) %>%
+      arrange(desc(rank_percent)) %>%
+      mutate(id_rank = factor(id_rank, levels = id_rank))
+    
+    # Ajouter colonne Marker
+    df_rel_ab$Marker <- marker
+    df_list[[marker]] <- df_rel_ab
+  }
+  
+  # Fusionner tous les marqueurs
+  df_all <- bind_rows(df_list)
+  
+  # Mettre en format long
+  df_long <- df_all %>%
+    pivot_longer(cols = c(Genet_ab_rel, Bota_ab_rel),
+                 names_to = "Type",
+                 values_to = "Abondance") %>%
+    mutate(
+      Label = case_when(
+        Type == "Bota_ab_rel" ~ "Bota",
+        Marker == "GH" ~ "GH",
+        Marker == "ITS" ~ "ITS",
+        Marker == "18S" ~ "18S"
+      ),
+      Label = factor(Label, levels = c("GH", "18S", "ITS"))  # ordre vertical des barres
+    )
+  
+  # Rank orader
+  rank_order <- c("cellular root","domain","kingdom","phylum","subphylum","clade","class","order","family","subfamily","tribe","genus","subgenus","species","subspecies","varietas")
+  
+  # Couleurs
+  my_colors <- c("GH" = "#1f78b4", "ITS" = "#ff7f00", "18S" = "#e31a1c")
+  
+  # Barplot
+  ggplot(df_long, aes(x = Abondance, y = reorder(Clade, Abondance), fill = Label)) +
+    geom_col(position = "dodge") +
+    labs(
+      x = "Pourcentage des calssification (%)",
+      y = "Rank",
+      fill = "Marqueur",
+      title = "Précision de la classification en selon le marqueur génétique"
+    ) +
+    scale_fill_manual(values = my_colors)
+
+  
+}
+
+barplot_class_rank <- function(){
+  
+  library(dplyr)
+  library(ggplot2)
+  library(forcats)
+  
+  markers <- c("GH","18S","ITS")
+  df_list <- list()
+  
+  for(marker in markers){
+    
+    genet <- select_genet(gene, Marker = marker) %>%
+      group_by(id_rank) %>%
+      summarise(rank_count = n(), .groups = "drop") %>%
+      mutate(rank_percent = rank_count*100/sum(rank_count))
+    
+    genet_percent <- percent_other(
+      df = genet,
+      var_ref = "id_rank",
+      var_per = "rank_percent",
+      treshold = 5
+    )
+    
+    genet_percent$Marker <- marker
+    df_list[[marker]] <- genet_percent
+  }
+  
+  df_all <- bind_rows(df_list)
+  
+  rank_order <- c(
+    "Other","cellular root","domain","kingdom","phylum","subphylum","clade",
+    "class","order","family","subfamily","tribe","genus",
+    "subgenus","species","subspecies","varietas"
+  )
+  
+  df_all <- df_all %>%
+    mutate(
+      id_rank = factor(id_rank, levels = rank_order),
+      Marker = factor(Marker, levels = c("GH","18S","ITS"))
+    )
+  
+  df_all_complete <- df_all %>%
+    mutate(id_rank = fct_drop(id_rank)) %>%   # enlève les niveaux absents
+    complete(
+      Marker,
+      id_rank,
+      fill = list(
+        rank_count = 0,
+        rank_percent = 0
+      )
+    )
+  
+  ggplot(df_all_complete, aes(x = rank_percent, y = id_rank, fill = Marker)) +
+    geom_col(
+      position = position_dodge(width = 0.8),
+      width = 0.7,
+      colour = "black",
+      linewidth = 0.2
+    ) +
+    theme_bw() +
+    theme(
+      panel.grid.major.y = element_line(color = "grey85"),
+      panel.grid.minor = element_blank(),
+      text = element_text(size = 14)
+    ) +
+    labs(
+      x="Percent of classified OTU (%)",
+      y="Maximal classification rank"
+    )
+  
+}
+
+percent_other <- function(df, var_ref, var_per, treshold){
+  # Sum percents < treshold
+  other_percent <- df %>%
+    filter(.data[[var_per]] < treshold) %>%
+    summarise(sum = sum(.data[[var_per]])) %>%
+    pull(sum)
+  # Create line "Other"
+  line_other <- data.frame(
+    value_ref = "Other",
+    value_per = other_percent
+  )
+  names(line_other) <- c(var_ref, var_per)
+
+  df <- df %>%
+    filter(.data[[var_per]] >= 1) %>% # remove lines < treshold
+    bind_rows(line_other)        # Add line sum "Other"
+  
+  return(df)
+}
+
+plot_pie_filter <- function(){
+  
+}
+
+filter_percent <- function(tax_list, filter_name_vec){
+  
+  tax_list %>%
+    select(filter_name_vec)
+  
+  # Init
+  x <- 0
+  # 
+  for (name in filter_name_vec) {
+    
+    
+  }
   
 }

@@ -11,7 +11,7 @@ library(DT)              # Tables
 
 # ===== Import data =====
 load(
-  "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport",
+  "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport.RData",
   envir = .GlobalEnv
   ) # import gene, bota...
 
@@ -37,11 +37,11 @@ ui <- dashboardPage(
     selectInput("name","Name",
                 choices = c("All")), # à update dans le serveur
     selectInput("var_bota","Variable bota",
-                choices = c("Count","NCI", "Gaussian","OTU","Div_alpha")),
+                choices = c("Count","NCI", "Gaussian","OTU","Shannon")),
     selectInput("norm","Normalisation", 
                 choices = c(TRUE,FALSE)),
     selectInput("var_genet","Variable genet",
-                choices = c("Weight","Weight_density", "OTU","Div_alpha"))
+                choices = c("Weight","Weight_density", "OTU","Shannon"))
     ),
   
   dashboardBody(
@@ -51,9 +51,10 @@ ui <- dashboardPage(
       tabItem(tabName="global",
               
               fluidRow(
-                box(plotOutput("renderPlot_compare"), width=10), # 100% = 12
-                valueBoxOutput("Name", width=2),
-                valueBoxOutput("R2", width=2),
+                box(plotOutput("renderPlot_compare"), width=9), # 100% = 12
+                valueBoxOutput("Name", width=3),
+                valueBoxOutput("R2", width=3),
+                valueBoxOutput("Corr_pears", width=3),
                 DTOutput("R2_tab"),
                 box(plotOutput("renderPlot_x_y"), width=6)
               )
@@ -99,7 +100,8 @@ server <- function(input, output, session){
       level      = input$level,
       name       = input$name,
       var_bota   = input$var_bota,
-      user_norm  = input$norm
+      user_norm  = input$norm,
+      radius = 10
     )
     
   })
@@ -172,6 +174,18 @@ server <- function(input, output, session){
       )
     ) %>% round(digits = 3)
     valueBox(paste0("R2 = ",r2),"", color = "blue")
+  })
+  # Corrélation pears
+  output$Corr_pears <- renderValueBox({
+    corr <- corr_b_g(
+      df_compare_join( # data prep
+        grid_pred = genet_grid(),
+        grid_obs  = bota_grid(),
+        var_pred  = input$var_genet,
+        var_obs   = input$var_bota
+      )
+    ) %>% round(digits = 2)
+    valueBox(paste0("Corr = ",corr),"", color = "blue")
   })
   # Name box
   output$Name <- renderValueBox({
