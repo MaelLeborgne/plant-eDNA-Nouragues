@@ -85,6 +85,13 @@ server <- function(input, output, session){
       noms <- noms[!is.na(noms)]
       noms <- unique(noms)
       
+      # Filtrage pour ne garder que ceux présents dans bota[[input$level]]
+      if(!is.null(bota[[input$level]])) {
+        noms <- noms[noms %in% bota[[input$level]]]
+      } else {
+        noms <- character(0)
+      }
+      
       updateSelectInput(
         session,
         "name",
@@ -109,12 +116,12 @@ server <- function(input, output, session){
   # Genet grid 
   genet_grid <- reactive({
     
-    genet_grid_read(
-      PROJECT_PATH,
-      input$marker, # Marker
-      input$level,  # Level
-      input$name    # Name
-      ) %>% filter(sample_loc != "TOTAL")
+    genet_grid_read( PROJECT_PATH,
+                     input$marker, # Marker
+                     input$level,  # Level
+                     input$name,    # Name
+                     from_csv = TRUE,
+                     total = FALSE)
     
   })
   
@@ -159,7 +166,6 @@ server <- function(input, output, session){
                   b_grid = bota_grid(),
                   g_grid = genet_grid(),
                   b_f    = bota_f(),
-                  df_compare = df_compare(),
                   stems  = stems)
   })
   

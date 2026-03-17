@@ -82,9 +82,8 @@ sample_seq_count <- function(genet_focus = select_genet()){
   # Diversité de Shannon
   sample_shannon <- data.frame(
     sample_id = rownames(sample_matrix),
-    #Q1 = vegan::renyi(sample_matrix,hill=TRUE)
     Shannon = diversity(sample_matrix, index = "shannon")
-  )
+  ) %>% mutate(H1 = exp(Shannon))
   
   # Join per samples
   sample_df <- left_join(sample_otu, sample_shannon, by = "sample_id") %>%
@@ -93,15 +92,11 @@ sample_seq_count <- function(genet_focus = select_genet()){
   
   # --- Résumé global ---
   otu_tab <- colSums(sample_matrix)
-  total_otu <- length(otu_tab)
   total_div <- diversity(otu_tab,index="shannon")
-  total_weight <- sum(sample_df$Weight, na.rm = TRUE)
   
   summary_df <- data.frame(
     sample_id = "TOTAL_",
-    OTU = total_otu,
-    Shannon = round(total_div,2),
-    Weight = total_weight
+    Shannon = round(total_div,2)
   )
   
   # Combiner la grille et le résumé
@@ -121,7 +116,8 @@ loc_mean <- function(sample_df = sample_seq_count()){
     summarise(
       Weight    = mean(.data[["Weight"]]   , na.rm = TRUE),
       OTU       = mean(.data[["OTU"]]      , na.rm = TRUE),
-      Shannon = mean(.data[["Shannon"]], na.rm = TRUE)
+      Shannon = mean(.data[["Shannon"]], na.rm = TRUE),
+      H1 = mean(.data[["H1"]], na.rm = TRUE)
       )
   
   # Add (x,y) with sample_ref
@@ -129,11 +125,12 @@ loc_mean <- function(sample_df = sample_seq_count()){
   
   # Complete missing value with zeros
   genet_grid <- ref_grid() %>%
-    left_join(mean_sample, by = c("x", "y")) %>%
+    left_join(mean_sample, by = c("sample_loc","x", "y")) %>%
     mutate(
       Weight       = replace_na(.data[["Weight"]],    0),
       OTU          = replace_na(.data[["OTU"]],       0),
-      Shannon    = replace_na(.data[["Shannon"]], 0)
+      Shannon    = replace_na(.data[["Shannon"]], 0),
+      H1    = replace_na(.data[["H1"]], 0)
       ) %>%
     mutate(
       Weight_density = normalization(Weight)
@@ -181,34 +178,74 @@ create_taxid_ref <- function(taxo){
       species = get_rank(x, "species"),
       
       # Detect if Embryophyta is present in lineage
-      is_plant = any(x$name == "Embryophyta")
+      is_plant = any(x$name == "Embryophyta"),
+      
+      # monocot clade
+      is_monocot = any(x$name %in% c("Liliopsida", "monocotyledons"))
     )
   })
   
-  # # No family identification
-  # tax_table$no_family <- is.na(tax_table$family)
-  # 
+  # No family identification
+  tax_table$not_na_family <- !is.na(tax_table$family)
+
   # # Monocot
   # not_trees <- c("Poaceae","Arecaceae","Araceae")
-  # 
-  # # Species
-  # tax_table$not_na_sp <- !is.na(tax_table$species)
-  # 
-  # # Valid species name
-  # tax_table$valid_sp_name <- tax_table$species %in% tax_valid_sp(tax_table)
-  # 
+
+  # Species
+  tax_table$not_na_sp <- !is.na(tax_table$species)
+
+  # Valid species name
+  tax_table$valid_sp_name <- tax_table$species %in% tax_valid_sp(tax_table)
+  
+  # Is in bota inventory
+  tax_table$is_in_bota <- tax_table$species %in% bota$Species
+  
   # # Growth form
-  # library(readxl)
-  # plant_growth <- read_excel("/home/jean/Bureau/ADNe_Nourague_2026/METABAR_plantes/metadata/Plants_Nouragues2001.xls")
-  # 
-  # tax_table$exist_in_plant_growth <- tax_table$species %in% plant_growth$species
-  # 
+  library(readxl)
+  plant_growth <- read_excel("/home/jean/Bureau/ADNe_Nourague_2026/METABAR_plantes/metadata/Plants_Nouragues2001.xls")
+
+  tax_table$exist_in_plant_growth <- tax_table$species %in% plant_growth$species
+
   return(tax_table)
 }
 
-genet_filter_tax_table <- function(genet_df){
+test_tax_table_vec <- function(taxo, vec_names){
   
-  return(genet_filterd)
+  tax_table <- map_dfr(names(taxo), function(id){
+    
+    x <- taxo[[id]]
+    
+    tibble(
+      taxid   = as.integer(id),
+      
+      # monocot clade
+      is_in_vec = any(x$name %in% vec_names)
+    )
+  })
+  
+  result <- table(tax_table$is_in_vec)
+  
+  return(result)
+}
+
+test_tax_table_2names <- function(taxo, name1 ="Arecaceae", name2="Liliopsida"){
+  
+  tax_table <- map_dfr(names(taxo), function(id){
+    
+    x <- taxo[[id]]
+    
+    tibble(
+      taxid   = as.integer(id),
+      
+      # monocot clade
+      is_in_vec = any(x$name == name1) & !any(x$name == name2)
+    )
+  })
+  
+  res_tab <- table(tax_table$is_in_vec)
+  res_taxid <- tax_table %>% filter(is_in_vec) 
+  
+  return(list(res_tab,res_taxid))
 }
 
 check_gf <- function(sp){
@@ -319,7 +356,7 @@ import_abiotic <- function(){
 }
 
 # ==== CREATE AND SAVE DATA ====
-# Create
+# # Create
 bota <- import_bota(PROJECT_PATH)   # Bota
 gene <- import_genet(PROJECT_PATH)  # Genet
 taxo <- get_all_classification()    # Classification genet
@@ -331,8 +368,10 @@ abiotic <- import_abiotic()         # Abiotic
 save(
   bota,
   gene,
+  taxo,
   tax_table,
   samples_ref,
+  abiotic,
   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport.RData"
 )
 
