@@ -11,29 +11,52 @@ library(tibble)  # Tibble class
 library(stringr) # Work on string
 library(purrr)   # pmap_int()
 library(vegan)   # OTU diversity
-library(ROBIFastread) # Read fasta
-library(Matrix) # output of OBITool
 
-# ===== GENERAL =====
+# ===== INIT GRID =====
 
 # Initialize empty grid
 ref_grid <- function(){
-  # X and Y
-  grid <- expand.grid(
+  
+  # Create all positions
+  df <- expand.grid(
     x = seq(10, 290, 10), # X position of samples
     y = seq(10, 390, 10)  # Y position of samples
   )
-  # Add indices i and j
-  grid$i <- grid$x / 10
-  grid$j <- grid$y / 10
   
-  grid <- left_join(grid, samples_ref, by = c("x","y"))
+  # Import samples name reference
+  samples_ref <- create_sample_ref()
+  
+  # Join samples name
+  df <- left_join(df, samples_ref, by = c("x","y"))
+  
+  # Init Metric to zero
+  df$Metric <- 0
+  
+  return(df)
+}
+
+init_grid <- function(config, filters){
+  
+  # Empty list
+  grid <- list()
+  
+  # Attach empty grid
+  grid$df <- ref_grid()
+  
+  # Attach config
+  grid$config <- config
+  
+  # Attach filters
+  grid$filters <- filters
   
   return(grid)
 }
 
-# Filtering the Data with the Name for a given Level
+# ==== SELECT TAXA ====
 select_tax <- function(Data, Level, Name){
+  
+  focus <- NULL
+  
   if(Name=="All"){
     focus <- Data
   }
@@ -49,25 +72,27 @@ select_tax <- function(Data, Level, Name){
 # ===== BOTA =====
 
 # Generic function to compute bota grid
-bota_grid_engine <- function(bota_focus = bota, 
+bota_grid_engine <- function(bota_focus,
+                             grid,
                              R = 20,
                              fun_pixel = function(df, sel, dij){length(sel)},
-                             var_name = "Count",
-                             normalize = TRUE,
                              return_comm = FALSE){
   
-  grid <- ref_grid()
+  # Configuration
+  df     <- grid$df
+  config <- grid$config
+  M      <- config$Metric
   
-  if(return_comm){
-    grid[[var_name]] <- vector("list", nrow(grid))
+  if(config$return_comm){
+    grid$df[[M]] <- vector("list", nrow(grid))
   } else {
-    grid[[var_name]] <- NA_real_
+    grid$df[[M]] <- NA_real_
   }
   
-  for (pixel in 1:nrow(grid)) {
+  for (pixel in 1:nrow(df)) {
     # adresse du pixel
-    px <- grid$x[pixel]
-    py <- grid$y[pixel]
+    px <- df$x[pixel]
+    py <- df$y[pixel]
     # distance de tout les arbre avec le pixel
     dij <- sqrt((px - bota_focus$Xfield)^2 + 
                   (py - bota_focus$Yfield)^2)
@@ -76,25 +101,21 @@ bota_grid_engine <- function(bota_focus = bota,
     
     if (length(sel) == 0) {
       
-      if(return_comm){
-        grid[[var_name]][[pixel]] <- table()
+      if(config$return_comm){
+        grid[[M]][[pixel]] <- table()
       } else {
-        grid[[var_name]][pixel] <- 0
+        grid[[M]][pixel] <- 0
       }
       
     } else {
       
       if(return_comm){
-        grid[[var_name]][[pixel]] <- fun_pixel(bota_focus, sel, dij)
+        grid[[M]][[pixel]] <- fun_pixel(bota_focus, sel, dij)
       } else {
-        grid[[var_name]][pixel] <- fun_pixel(bota_focus, sel, dij)
+        grid[[M]][pixel] <- fun_pixel(bota_focus, sel, dij)
       }
       
     }
-  }
-  
-  if (normalize) {
-    grid[[var_name]] <- normalization(grid[[var_name]])
   }
   
   return(grid)
@@ -134,11 +155,9 @@ grid_basal_area <- function(bota_focus = bota,
 }
 
 # NCI
-bota_grid_NCI <- function(bota_focus, R = 20, user_norm =FALSE){
+bota_grid_NCI <- function(B, R, user_norm =FALSE){
   # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
+  bota_grid_engine( B, R,
     var_name = "NCI",
     normalize = user_norm,
     fun_pixel = function(df, sel, dij){
@@ -149,53 +168,53 @@ bota_grid_NCI <- function(bota_focus, R = 20, user_norm =FALSE){
   )
 }
 
-# Gaussian
-bota_grid_Gauss <- function(bota_focus, BETA, GAMMA, R = 20, user_norm=FALSE){
-  # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
-    var_name = "Gaussian",
-    normalize = user_norm,
-    fun_pixel = function(df, sel, dij){
-      sum(
-        (pi*(df$CircCorr[sel]/2)^2) *
-          exp(-BETA * dij[sel]^GAMMA),
-        na.rm = TRUE
-      )
-    }
-  )
-}
-
-### Fonction to minimize (gauss)
-rss_function <- function(par, ADNe_obs) {
-  # Prameters
-  beta <- par[1]
-  gamma <- par[2]
-
-  # Prediction
-  pred_grid <- bota_grid_Gauss(beta, gamma)
-
-  # Residuals
-  resid <- ADNe_obs - pred_grid$density
-
-  # RSS
-  print(sum(resid^2))
-  print(beta)
-  sum(resid^2)
-  }
-
-### Launch Optimization (gauss)
-optim_gauss <- function(genet_grid) {
-  res <- optim(
-    par = c(0.2,1),
-    fn = rss_function,
-    ADNe_obs = genet_grid$density,
-    method = "L-BFGS-B",
-    lower = c(0,0),  # logical constraint (biological)
-  )
-  return(res)
-}
+# # Gaussian
+# bota_grid_Gauss <- function(bota_focus, BETA, GAMMA, R = 20, user_norm=FALSE){
+#   # Give calcul to generic function
+#   bota_grid_engine(
+#     bota_focus,
+#     R = R,
+#     var_name = "Gaussian",
+#     normalize = user_norm,
+#     fun_pixel = function(df, sel, dij){
+#       sum(
+#         (pi*(df$CircCorr[sel]/2)^2) *
+#           exp(-BETA * dij[sel]^GAMMA),
+#         na.rm = TRUE
+#       )
+#     }
+#   )
+# }
+# 
+# ### Fonction to minimize (gauss)
+# rss_function <- function(par, ADNe_obs) {
+#   # Prameters
+#   beta <- par[1]
+#   gamma <- par[2]
+# 
+#   # Prediction
+#   pred_grid <- bota_grid_Gauss(beta, gamma)
+# 
+#   # Residuals
+#   resid <- ADNe_obs - pred_grid$density
+# 
+#   # RSS
+#   print(sum(resid^2))
+#   print(beta)
+#   sum(resid^2)
+#   }
+# 
+# ### Launch Optimization (gauss)
+# optim_gauss <- function(genet_grid) {
+#   res <- optim(
+#     par = c(0.2,1),
+#     fn = rss_function,
+#     ADNe_obs = genet_grid$density,
+#     method = "L-BFGS-B",
+#     lower = c(0,0),  # logical constraint (biological)
+#   )
+#   return(res)
+# }
 
 # OTU
 bota_grid_OTU <- function(bota_focus, R = 15, user_norm){
@@ -257,29 +276,31 @@ bota_grid_H1 <- function(bota_focus, R = 20, user_norm=FALSE){
 }
 
 # Apply conditions for bota grid calcul
-bota_grid_read <- function(config){
+bota_grid_read <- function(grid){
   
-  # Create grid object
-  grid <- list()
+  # Configuration
+  config <- grid$config
+  R <- config$Radius
+  M <- config$Metric
   
-  # Attacht metadata
-  grid$config <- config
+  # Import bota
+  bota <- import_bota(config)
   
-  # Sélection du taxon
-  bota_focus <- select_tax(bota, config$Level, config$Name)
+  # Select Taxa
+  B <- select_tax(bota, config$Level, config$Name)
   
   # Choix de la métrique botanique via switch
-  grid$df <- switch(config$Metric,
-               "Count"     = bota_grid_count(bota_focus, R = config$Radius),
-               "NCI"       = bota_grid_NCI(bota_focus),
-               "Gaussian"  = {
-                 result <- optim_gauss(bota_focus)
-                 bota_grid_Gauss(bota_focus, BETA = result$par[1], GAMMA = result$par[2])
-               },
-               "OTU"       = bota_grid_OTU(bota_focus, R = config$Radius),
-               "OTU_mat"   = bota_grid_OTU_matrice(bota_focus, R = config$Radius),
-               "Shannon"   = bota_grid_shannon(bota_focus, R = config$Radius),
-               stop("Unknown var_bota: ", config$Metric)  # gestion d'erreur
+  grid$df <- switch(M,
+               "Count"     = bota_grid_count(B, R),
+               "NCI"       = bota_grid_NCI(B),
+               # "Gaussian"  = {
+               #   result <- optim_gauss(B)
+               #   bota_grid_Gauss(B, BETA = result$par[1], GAMMA = result$par[2])
+               # },
+               "OTU"       = bota_grid_OTU(B, R),
+               "OTU_mat"   = bota_grid_OTU_matrice(B, R),
+               "Shannon"   = bota_grid_shannon(B, R),
+               stop("Unknown var_bota: ", M)  # gestion d'erreur
   )
   
   return(grid)
@@ -596,12 +617,18 @@ genet_grid_read <- function(config, filters){
 # ==== GRID READ ====
 
 grid_read <- function(config, filters){
+  
+  # Initialize Grid
+  grid <- init_grid(config, filters)
+  
+  # Fill Grid
   if(config$Type == "bota"){
-    grid <- bota_grid_read(config)
+    grid <- bota_grid_read(grid)
   }
   else if (config$Type == "genet"){
-    grid <- genet_grid_read(config, filters)
+    grid <- genet_grid_read(grid)
   }
+  
   return(grid)
 }
 

@@ -68,10 +68,13 @@ plot_grid(grid)
 # Config
 grid_config <- list(Level = "Family",
                     Name = "Fabaceae",
-                    Metric = "OTU",
                     Type = "bota",
+                    Year = "2012",
+                    Metric = "OTU",
                     Radius = 10,
                     return_comm = FALSE)
+# No filters
+grid_filters <- list()
 # Grid Read
 grid <- grid_read(
   config = grid_config,
