@@ -19,7 +19,7 @@ library(ggplot2) # Plot
 
 # Join genet and bota grid in the same dataframe
 df_compare_join <- function(grid_pred  = genet_grid_read(), 
-                            grid_obs   = bota_grid_compute(), 
+                            grid_obs   = bota_grid_read(), 
                             var_pred   = "Weight_density", 
                             var_obs    = "Count",
                             total = FALSE
@@ -70,7 +70,7 @@ R2_taxon <- function(Marker    = "GH",
   # Give all R2
   all_r2 <- lapply(all_names, function(n){
     # Bota grid
-    bota_df <- bota_grid_compute(
+    bota_df <- bota_grid_read(
       bota_df      = bota,
       level        = Level,
       name         = n,

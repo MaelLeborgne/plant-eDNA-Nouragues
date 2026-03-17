@@ -30,26 +30,53 @@ source("plots.R")
 
 ```{r}
 
+# Test Genet
 # Config
-config_list <- list(m = "GH",
-                    l = "Family",
-                    n = "Fabaceae",
+grid_config <- list(Level = "Family",
+                    Name = "Fabaceae",
+                    Metric = "OTU",
+                    Type = "genet",
+                    Clust = FALSE,
+                    Rar = FALSE,
+                    Marker = "GH",
                     from_csv = FALSE,
                     total = FALSE)
 
 # Filters
-filter_list <- list(
+grid_filters <- list(
   filter_plant = FALSE,
   filter_monocot = FALSE,
   filter_na_family = FALSE,
   filter_na_sp = FALSE,
   filter_valid_sp = FALSE
 )
-grid_fam <- genet_grid_read(
-  config = config_list,
-  filters = filter_list
+grid_fam <- grid_read(
+  config = grid_config,
+  filters = grid_filters
 )
-plot_grid(grid_fam,"OTU")
+plot_grid(grid_fam)
+
+# Test Bota
+## config
+grid_config <- list(Level = "Family",
+                    Name = "Fabaceae",
+                    Metric = "OTU",
+                    Type = "bota",
+                    Radius = 10,
+                    return_comm = FALSE)
+
+grid_fam <- grid_read(
+  config = grid_config,
+  filters = grid_filters
+)
+plot_grid(grid_fam)
+
+
+
+
+
+
+
 
 # Fabaceae all filters
 filter_list <- list(

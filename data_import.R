@@ -15,8 +15,28 @@ library(vegan)
 # ===== Source data prep =====
 source("data_prep.R")
 
+# ===== GENERAL =====
+
+# Create reference dataframe for sample name and position
+create_sample_ref <- function(PROJECT_PATH){
+  # Import physical data of samples
+  data_samples <- read.table(
+    "/home/jean/Bureau/ADNe_Nourague_2026/zinger/Zinger_et_al_metabar_PP1_samples.txt",
+    header = TRUE,
+    comment.char = "#"
+  )
+  # Select and split pcr
+  sample_ref <- data_samples %>%
+    select(pcr,x,y) %>%
+    separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
+    distinct(sample_loc, x, y)
+  
+  # Return Ref
+  sample_ref
+}
+
 # ==== BOTA ====
-import_bota <- function(PROJECT_PATH){
+import_bota <- function(){
   # Import CSV
   bota <- read.csv(paste0(PROJECT_PATH,"data/Nour_2012.csv"),sep = ",",dec = ".") %>%
     mutate(Species = paste(Genus, Species, sep=" "))
@@ -25,7 +45,7 @@ import_bota <- function(PROJECT_PATH){
 }
 
 # ==== GENET ====
-import_genet <- function(PROJECT_PATH){
+import_genet_clean <- function(){
   # Set directory
   setwd(paste0(PROJECT_PATH,"data/"))
   
@@ -53,7 +73,66 @@ import_genet <- function(PROJECT_PATH){
   gene
 }
 
+import_genet_clust <- function(){
+  # Set directory
+  setwd(paste0(PROJECT_PATH,"/home/jean/Bureau/GH_clean/"))
+  
+  # GH marker
+  dna_comm <- readRDS("GH_mblist_annot_metabar_clean_clust97.rds")
+  dna_comm <- dna_comm$reads
+  dna_rich <- rowSums(dna_comm > 0)
+  
+  # 18S marker
+  dna_comm <- readRDS("18s_mblist_annot_metabar_clean.rds")
+  dna_comm <- dna_comm$reads
+  dna_rich <- rowSums(dna_comm > 0)
+  
+  # ITS marker
+  dna_comm <- readRDS("GH_mblist_annot_metabar_clean_clust97.rds")
+  dna_comm <- dna_comm$reads
+  dna_rich <- rowSums(dna_comm > 0)
 
+  
+  # Centralize data in Named List (no duplication, just ref)
+  gene <- setNames(
+    list(diet_data_GH, # df
+         diet_data_18S, 
+         diet_data_ITS), 
+    c("GH","18S","ITS") # names
+  )
+  
+  # Return
+  gene
+}
+
+import_genet_rar <- function(){
+  # Set directory
+  setwd(paste0(PROJECT_PATH,"/home/jean/Bureau/GH_clean/"))
+  
+  # GH marker
+  dna_comm <- readRDS("GH_mblist_annot_metabar_clean_clust97_RAR.rds")
+  dna_comm <- dna_comm$reads
+  
+  # 18S marker
+  dna_comm <- readRDS("18S_mblist_annot_metabar_clean_clust97_RAR.rds")
+  dna_comm <- dna_comm$reads
+  
+  # ITS marker
+  dna_comm <- readRDS("ITS_mblist_annot_metabar_clean_clust97_RAR.rds")
+  dna_comm <- dna_comm$reads
+
+  
+  # Centralize data in Named List (no duplication, just ref)
+  gene <- setNames(
+    list(diet_data_GH, # df
+         diet_data_18S, 
+         diet_data_ITS), 
+    c("GH","18S","ITS") # names
+  )
+  
+  # Return
+  gene
+}
 
 
 # ==== TAXID REF ====
@@ -231,25 +310,7 @@ tax_valid_sp <- function(tax_table){
 # setwd(paste0(PROJECT_PATH,"zinger/"))
 # zinger_plant <- read_obifasta("Zinger_et_al_metabar_PP1_Plants.uniq.fasta")
 
-# ===== GENERAL =====
 
-# Create reference dataframe for sample name and position
-create_sample_ref <- function(PROJECT_PATH){
-  # Import physical data of samples
-  data_samples <- read.table(
-    "/home/jean/Bureau/ADNe_Nourague_2026/zinger/Zinger_et_al_metabar_PP1_samples.txt",
-    header = TRUE,
-    comment.char = "#"
-  )
-  # Select and split pcr
-  sample_ref <- data_samples %>%
-    select(pcr,x,y) %>%
-    separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
-    distinct(sample_loc, x, y)
-  
-  # Return Ref
-  sample_ref
-}
 
 # ==== ABIOTIC ====
 
@@ -271,15 +332,16 @@ import_abiotic <- function(){
 }
 
 # ==== CREATE AND SAVE DATA ====
-# # Create
-bota <- import_bota(PROJECT_PATH)   # Bota
-gene <- import_genet(PROJECT_PATH)  # Genet
+
+# Create
+samples_ref <- create_sample_ref()  # Samples names / position
+bota <- import_bota()   # Bota
+gene <- import_genet()  # Genet
 taxo <- get_all_classification()    # Classification genet
 tax_table <- create_taxid_ref(taxo) # Taxid
-samples_ref <- create_sample_ref()  # Samples names / position
 abiotic <- import_abiotic()         # Abiotic
 
-# List
+# Save data
 save(
   bota,
   gene,

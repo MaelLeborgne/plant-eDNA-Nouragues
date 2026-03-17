@@ -266,34 +266,32 @@ bota_grid_H1 <- function(bota_focus, R = 20, user_norm=FALSE){
 }
 
 # Apply conditions for bota grid calcul
-bota_grid_compute <- function(bota_df   = bota, 
-                              level     = "Family", 
-                              name      = "All", 
-                              var_bota  = "Count", 
-                              user_norm = TRUE,
-                              return_comm = FALSE,
-                              radius = 15
-                              ){
+bota_grid_read <- function(config){
   
-  # Sélection du taxon et gestion du all
-  df <- if(name == "All") bota_df else select_tax(bota_df, level, name)
+  # Create grid object
+  grid <- list()
+  
+  # Attacht metadata
+  grid$config <- config
+  
+  # Sélection du taxon
+  bota_focus <- select_tax(bota, config$Level, config$Name)
   
   # Choix de la métrique botanique via switch
-  df <- switch(var_bota,
-               "Count"     = bota_grid_count(df, R = radius, user_norm),
-               "NCI"       = bota_grid_NCI(df, user_norm),
+  grid$df <- switch(config$Metric,
+               "Count"     = bota_grid_count(bota_focus, R = config$Radius),
+               "NCI"       = bota_grid_NCI(bota_focus),
                "Gaussian"  = {
-                 if(is.null(df)) stop("bota required for Gaussian")
-                 result <- optim_gauss(bota)
-                 bota_grid_Gauss(df, BETA = result$par[1], GAMMA = result$par[2], user_norm)
+                 result <- optim_gauss(bota_focus)
+                 bota_grid_Gauss(bota_focus, BETA = result$par[1], GAMMA = result$par[2])
                },
-               "OTU"       = bota_grid_OTU(df, R = radius, user_norm),
-               "OTU_mat"   = bota_grid_OTU_matrice(df, R = radius),
-               "Shannon" = bota_grid_shannon(df, R = radius, user_norm),
-               stop("Unknown var_bota: ", var_bota)  # gestion d'erreur
+               "OTU"       = bota_grid_OTU(bota_focus, R = config$Radius),
+               "OTU_mat"   = bota_grid_OTU_matrice(bota_focus, R = config$Radius),
+               "Shannon"   = bota_grid_shannon(bota_focus, R = config$Radius),
+               stop("Unknown var_bota: ", config$Metric)  # gestion d'erreur
   )
   
-  return(df)
+  return(grid)
 }
 
 
@@ -474,7 +472,7 @@ genet_grid_count <- function(genet_focus = select_genet()){
   return(genet_grid)
 }
 
-genet_grid_write <- function(PROJECT_PATH, focus, fileName){
+genet_grid_write <- function(focus, fileName){
   # Make grid
   grid <- genet_grid_count(focus)
   
@@ -494,8 +492,7 @@ give_level_names <- function(Marker, Level, filters){
   return(unique(mark_focus[[level]]))
 }
 
-genet_grid_write_all <- function(path = PROJECT_PATH, 
-                                 genet_all = gene, 
+genet_grid_write_all <- function(genet_all = gene, 
                                  markers  ="GH", 
                                  m_levels = "Family"){
   # For each markers
@@ -528,110 +525,11 @@ genet_grid_write_all <- function(path = PROJECT_PATH,
             filter(!is.na(.data[[l]])) # col family, genus or specie
         }
         # Write
-        genet_grid_write(path, focus, fileName)
+        genet_grid_write(focus, fileName)
       }
     }
   }
 }
-
-# Read grid from csv in ./genet_grid/
-genet_grid_read <- function(path = PROJECT_PATH,
-                            m = "GH", 
-                            l = "Family", 
-                            n = "Fabaceae",
-                            from_csv = TRUE,
-                            rarefied = FALSE,
-                            filters = list(),
-                            total = FALSE
-                            ){
-  
-  # Init
-  genet_grid <- data.frame()
-  
-  if(from_csv){ # Read from csv
-    fileName <- paste0(m,"_",l,"_",n,".csv")
-    genet_grid <- read.csv(paste0(path,"genet_grid_5filters/",fileName))
-  }
-  else{ # Read from
-    if(rarefied){
-      # ---- eDNA ----
-      dna_comm <- readRDS("/home/jean/Bureau/GH_clean/GH_mblist_annot_metabar_clean_clust97_RAR.rds")
-      dna_comm <- dna_comm$reads
-      dna_rich <- rowSums(dna_comm > 0)
-    }
-    genet_grid <- genet_grid_count(
-      select_genet(
-        genet_all = gene, 
-        Marker = m, 
-        level = tolower(l), 
-        Name = n,
-        filters = filters)
-    )
-  }
-  
- 
-  if (!total){ # remove de total
-    genet_grid <- genet_grid   %>% 
-      filter(sample_loc != "TOTAL")
-  }
-
-  # Return
-  return(genet_grid)
-}
-
-# genet_grid_read <- function(config, filters){
-#   # Extract config
-#   m <- config$m
-#   l <- config$l
-#   n <- config$n
-#   from_csv <- config$from_csv
-#   path <- config$path
-#   total <- config$total
-#   rarefied <- config$rarefied
-#   
-#   if(config$from_csv){
-#     genet_grid <- read_genet_grid_csv(
-#       config$path, config$m, config$l, config$n
-#     )
-#   } else {
-#     dna <- load_edna_data(config$rarefied)
-#     
-#     genet_grid <- build_genet_grid(
-#       config$m, config$l, config$n, filters
-#     )
-#   }
-#   
-#   if(!config$total){
-#     genet_grid <- genet_grid %>% 
-#       filter(sample_loc != "TOTAL")
-#   }
-#   
-#   genet_grid
-# }
-# 
-# read_genet_grid_csv <- function(path, m, l, n){
-#   fileName <- paste0(m,"_",l,"_",n,".csv")
-#   read.csv(file.path(path, "genet_grid_5filters", fileName))
-# }
-# 
-# load_edna_data <- function(rarefied){
-#   if(!rarefied) return(NULL)
-#   
-#   dna_comm <- readRDS("...rds")
-#   dna_comm$reads
-# }
-# 
-# build_genet_grid <- function(m, l, n, filters){
-#   genet_grid_count(
-#     select_genet(
-#       genet_all = gene, 
-#       Marker = m, 
-#       level = tolower(l), 
-#       Name = n,
-#       filters = filters
-#     )
-#   )
-# }
 
 # ==== WRITE ALL GENET_GRID ====
 # # Test loop
@@ -643,4 +541,76 @@ genet_grid_read <- function(path = PROJECT_PATH,
 # markers <- c("GH")
 # m_levels <- c("Family")
 # genet_grid_write_all(PROJECT_PATH, gene, markers, m_levels)
+
+# ==== GENET READ ====
+
+read_genet_grid_csv <- function(path, m, l, n){
+  fileName <- paste0(m,"_",l,"_",n,".csv")
+  read.csv(file.path(path, "genet_grid_5filters", fileName))
+}
+
+load_edna_data <- function(rarefied){
+  if(!rarefied) return(NULL)
+
+  dna_comm <- readRDS("...rds")
+  dna_comm$reads
+}
+
+build_genet_grid <- function(m, l, n, filters){
+  genet_grid_count(
+    select_genet(
+      genet_all = gene,
+      Marker = m,
+      level = tolower(l),
+      Name = n,
+      filters = filters
+    )
+  )
+}
+
+genet_grid_read <- function(config, filters){
+  # Create grid object
+  grid <- list()
+  
+  # Attacht metadata
+  grid$config <- config
+  grid$filters <- filters
+  
+  # Build it dataframe from metadata
+  # From csv condition
+  if(config$from_csv){
+    grid$df <- read_genet_grid_csv(
+      config$path, config$Marker, config$Level, config$Name
+    )
+  } else {
+    dna <- load_edna_data(config$rarefied)
+    
+    grid$df <- build_genet_grid(
+      config$Marker, config$Level, config$Name, filters
+    )
+  }
+  
+  # Total included
+  if(!config$total){
+    grid$df <- grid$df %>%
+      filter(sample_loc != "TOTAL")
+  }
+  
+  return(grid)
+}
+
+
+
+
+# ==== GRID READ ====
+
+grid_read <- function(config, filters){
+  if(config$Type == "bota"){
+    grid <- bota_grid_read(config)
+  }
+  else if (config$Type == "genet"){
+    grid <- genet_grid_read(config, filters)
+  }
+  return(grid)
+}
 

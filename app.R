@@ -103,7 +103,7 @@ server <- function(input, output, session){
   # Bota grid 
   bota_grid <- reactive({
     
-    bota_grid_compute(
+    bota_grid_read(
       bota_df    = bota,
       level      = input$level,
       name       = input$name,
