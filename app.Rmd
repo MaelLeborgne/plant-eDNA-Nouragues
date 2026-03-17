@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Library
+
 ```{r}
 
 PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
@@ -21,27 +22,28 @@ load(
   envir = .GlobalEnv
   ) # import gene, bota...
 
+source("data_import.R")
+source("filters.R")
 source("grid.R")
 source("table.R")
 source("plots.R")
 ```
 
-# ---- EXEMPLE ----
+# Tests
+
+## Basic
+
+### Grid Genet
 
 ```{r}
 
-# Test Genet
 # Config
 grid_config <- list(Level = "Family",
                     Name = "Fabaceae",
                     Metric = "OTU",
                     Type = "genet",
-                    Clust = FALSE,
                     Rar = FALSE,
-                    Marker = "GH",
-                    from_csv = FALSE,
-                    total = FALSE)
-
+                    Marker = "GH")
 # Filters
 grid_filters <- list(
   filter_plant = FALSE,
@@ -50,34 +52,38 @@ grid_filters <- list(
   filter_na_sp = FALSE,
   filter_valid_sp = FALSE
 )
-grid_fam <- grid_read(
+# Read Grid
+grid <- grid_read(
   config = grid_config,
   filters = grid_filters
 )
-plot_grid(grid_fam)
+# Plot
+plot_grid(grid)
 
-# Test Bota
-## config
+```
+
+### Grid Bota
+
+```{r}
+# Config
 grid_config <- list(Level = "Family",
                     Name = "Fabaceae",
                     Metric = "OTU",
                     Type = "bota",
                     Radius = 10,
                     return_comm = FALSE)
-
-grid_fam <- grid_read(
+# Grid Read
+grid <- grid_read(
   config = grid_config,
   filters = grid_filters
 )
-plot_grid(grid_fam)
+# Plot
+plot_grid(grid)
+```
 
+## Others
 
-
-
-
-
-
-
+```{r}
 # Fabaceae all filters
 filter_list <- list(
   filter_plant = TRUE,
@@ -147,6 +153,3 @@ filter_list <- list(
   filter_valid_sp = FALSE
 )
 ```
-
-
-

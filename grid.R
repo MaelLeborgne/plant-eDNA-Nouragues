@@ -1,6 +1,5 @@
 
-# ===== data_prep.R =====
-# Regroup data preparation functions by Subject
+# ===== grid.R =====
 
 # Path of the project
 PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
@@ -45,14 +44,6 @@ select_tax <- function(Data, Level, Name){
   
   # Return
   return(focus)
-}
-
-# Normalisation of column count of a grid
-normalization <- function(count) {
-  # Normalisation
-  density <-  count / sum(count)
-  # Return
-  return(density)
 }
 
 # ===== BOTA =====

@@ -4,351 +4,151 @@
 
 # ===== Libraries =====
 library(tidyverse) # Basic
-library(dplyr) # Basic
-library(magrittr)  # %<>%
-library(ROBIFastread) # Read fasta
-library(Matrix) # output of OBITool
-library(taxize) # taxid and NCBI
-library(jsonlite) # manage json
-library(vegan)
+library(dplyr)     # Basic
+library(readxl)    # Excel
 
-# ===== Source data prep =====
-source("data_prep.R")
+# ===== Source =====
+PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
 
-# ===== GENERAL =====
 
-# Create reference dataframe for sample name and position
-create_sample_ref <- function(PROJECT_PATH){
-  # Import physical data of samples
-  data_samples <- read.table(
-    "/home/jean/Bureau/ADNe_Nourague_2026/zinger/Zinger_et_al_metabar_PP1_samples.txt",
-    header = TRUE,
-    comment.char = "#"
-  )
-  # Select and split pcr
+# ===== SAMPLES POSITION (L.Zinger) =====
+
+create_sample_ref <- function(){
+  
+  # Set directory
+  setwd(paste0(PROJECT_PATH,"data/Zinger_plants_nouragues/"))
+  
+  # Read TXT
+  data_samples <- read.table("Zinger_et_al_metabar_PP1_samples.txt",
+                             header = TRUE,
+                             comment.char = "#")
+  
+  # Extracts samples name and position
   sample_ref <- data_samples %>%
     select(pcr,x,y) %>%
     separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
     distinct(sample_loc, x, y)
   
-  # Return Ref
-  sample_ref
+  return(sample_ref)
 }
 
-# ==== BOTA ====
-import_bota <- function(){
-  # Import CSV
-  bota <- read.csv(paste0(PROJECT_PATH,"data/Nour_2012.csv"),sep = ",",dec = ".") %>%
-    mutate(Species = paste(Genus, Species, sep=" "))
-  # Return
-  bota
-}
+# ==== BOTA (G.Sellan & A.Mirabelle) ====
 
-# ==== GENET ====
-import_genet_clean <- function(){
+import_bota <- function(config){
+  
   # Set directory
-  setwd(paste0(PROJECT_PATH,"data/"))
+  setwd(paste0(PROJECT_PATH,"data/Bota/"))
   
-  # GH marker
-  diet_data_GH <- read_obifasta("metabar_PP_GH.simple.clean.c10.l40.taxo.ann.fasta")
-  diet_data_GH %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-  
-  # 18S marker
-  diet_data_18S <- read_obifasta("metabar_PP_18s.simple.clean.c10.l80.taxo.ann.fasta")
-  diet_data_18S %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-  
-  # ITS marker
-  diet_data_ITS <- read_obifasta("metabar_PP_ITS.simple.clean.c10.l180.taxo.ann.fasta")
-  diet_data_ITS %<>% extract_features("obitag_bestmatch","obitag_bestid","obitag_rank","scientific_name",'taxid')
-  
-  # Centralize data in Named List (no duplication, just ref)
-  gene <- setNames(
-    list(diet_data_GH, # df
-         diet_data_18S, 
-         diet_data_ITS), 
-    c("GH","18S","ITS") # names
-  )
-  
-  # Return
-  gene
+  # Select Year
+  if(config$Year == "2012"){
+    bota <- read.csv("Nour_2012.csv",sep = ",",dec = ".") %>%
+      mutate(Species = paste(Genus, Species, sep=" "))
+  }
+  else if(config$Year == "2022"){
+    bota <- read.csv("Nour_2022.csv",sep = ",",dec = ".") %>%
+      mutate(Species = paste(Genus, Species, sep=" "))
+  }
+  else{
+    stop("Unknown Year: ", config$Year)
+  }
+
+  return(bota)
 }
 
-import_genet_clust <- function(){
+# ==== GENET (I.Calderon) ====
+
+
+# Data clustered
+select_clust <- function(config){
+  
   # Set directory
-  setwd(paste0(PROJECT_PATH,"/home/jean/Bureau/GH_clean/"))
+  setwd(paste0(PROJECT_PATH,"data/Irene_genet/"))
   
-  # GH marker
-  dna_comm <- readRDS("GH_mblist_annot_metabar_clean_clust97.rds")
-  dna_comm <- dna_comm$reads
-  dna_rich <- rowSums(dna_comm > 0)
-  
-  # 18S marker
-  dna_comm <- readRDS("18s_mblist_annot_metabar_clean.rds")
-  dna_comm <- dna_comm$reads
-  dna_rich <- rowSums(dna_comm > 0)
-  
-  # ITS marker
-  dna_comm <- readRDS("GH_mblist_annot_metabar_clean_clust97.rds")
-  dna_comm <- dna_comm$reads
-  dna_rich <- rowSums(dna_comm > 0)
-
-  
-  # Centralize data in Named List (no duplication, just ref)
-  gene <- setNames(
-    list(diet_data_GH, # df
-         diet_data_18S, 
-         diet_data_ITS), 
-    c("GH","18S","ITS") # names
+  # Select Marker
+  data <- switch (config$Marker,
+    "GH" = readRDS("GH_mblist_annot_metabar_clean_clust97.rds"),
+    "18S"= readRDS("18s_mblist_annot_metabar_clean.rds"),
+    "ITS"= readRDS("GH_mblist_annot_metabar_clean_clust97.rds"),
+    stop("Unknown Marker: ", config$Marker)
   )
   
-  # Return
-  gene
+  return(data)
 }
 
-import_genet_rar <- function(){
+# Data rarefied
+select_rar <- function(config){
+  
   # Set directory
-  setwd(paste0(PROJECT_PATH,"/home/jean/Bureau/GH_clean/"))
+  setwd(paste0(PROJECT_PATH,"data/Irene_genet/"))
   
-  # GH marker
-  dna_comm <- readRDS("GH_mblist_annot_metabar_clean_clust97_RAR.rds")
-  dna_comm <- dna_comm$reads
-  
-  # 18S marker
-  dna_comm <- readRDS("18S_mblist_annot_metabar_clean_clust97_RAR.rds")
-  dna_comm <- dna_comm$reads
-  
-  # ITS marker
-  dna_comm <- readRDS("ITS_mblist_annot_metabar_clean_clust97_RAR.rds")
-  dna_comm <- dna_comm$reads
-
-  
-  # Centralize data in Named List (no duplication, just ref)
-  gene <- setNames(
-    list(diet_data_GH, # df
-         diet_data_18S, 
-         diet_data_ITS), 
-    c("GH","18S","ITS") # names
+  # Select Marker
+  data <- switch (config$Marker,
+                  "GH" = readRDS("GH_mblist_annot_metabar_clean_clust97_RAR.rds"),
+                  "18S"= readRDS("18S_mblist_annot_metabar_clean_clust97_RAR.rds"),
+                  "ITS"= readRDS("ITS_mblist_annot_metabar_clean_clust97_RAR.rds"),
+                  stop("Unknown Marker: ", config$Marker)
   )
   
-  # Return
-  gene
+  return(data)
 }
 
-
-# ==== TAXID REF ====
-
-# Function Take the rank name for a give rank
-get_rank <- function(x, rank) {
-  val <- x$name[x$rank == rank]
-  if(length(val) == 0) NA else val
+# Apply option of Rarification
+import_genet <- function(config){
+  
+  # Select rarefied data
+  if(config$Rar){ 
+    data <- select_rar(config)
+  }
+  else{ # Or not
+    data <- select_clust(config)
+  }
+  
+  return(data)
 }
 
-# Get classification
-get_all_classification <- function(){
-  # Take all unique taxid
-  all_unique_taxid <- c(gene$GH$taxid,
-                        gene$`18S`$taxid,
-                        gene$ITS$taxid) %>% unique()
-  
-  # Get full taxonomy
-  taxo <- classification(all_unique_taxid, "ncbi")
-  return(taxo)
-}
-
-# Create taxid ref
-create_taxid_ref <- function(taxo){
-  
-  # Loop on each taxid
-  tax_table <- map_dfr(names(taxo), function(id){
-    
-    x <- taxo[[id]]
-    
-    tibble(
-      taxid   = as.integer(id),
-      id_rank = tail(x$rank, 1),
-      id_accuracy = length(x$rank),
-      family  = get_rank(x, "family"),
-      genus   = get_rank(x, "genus"),
-      species = get_rank(x, "species"),
-      
-      # Detect if Embryophyta is present in lineage
-      is_plant = any(x$name == "Embryophyta"),
-      
-      # monocot clade
-      is_monocot = any(x$name %in% c("Liliopsida", "monocotyledons"))
-    )
-  })
-  
-  # No family identification
-  tax_table$not_na_family <- !is.na(tax_table$family)
-
-  # # Monocot
-  # not_trees <- c("Poaceae","Arecaceae","Araceae")
-
-  # Species
-  tax_table$not_na_sp <- !is.na(tax_table$species)
-
-  # Valid species name
-  tax_table$valid_sp_name <- tax_table$species %in% tax_valid_sp(tax_table)
-  
-  # Is in bota inventory
-  tax_table$is_in_bota <- tax_table$species %in% bota$Species
-  
-  # # Growth form
-  library(readxl)
-  plant_growth <- read_excel("/home/jean/Bureau/ADNe_Nourague_2026/METABAR_plantes/metadata/Plants_Nouragues2001.xls")
-
-  tax_table$exist_in_plant_growth <- tax_table$species %in% plant_growth$species
-
-  return(tax_table)
-}
-
-test_tax_table_vec <- function(taxo, vec_names){
-  
-  tax_table <- map_dfr(names(taxo), function(id){
-    
-    x <- taxo[[id]]
-    
-    tibble(
-      taxid   = as.integer(id),
-      
-      # monocot clade
-      is_in_vec = any(x$name %in% vec_names)
-    )
-  })
-  
-  result <- table(tax_table$is_in_vec)
-  
-  return(result)
-}
-
-test_tax_table_2names <- function(taxo, name1 ="Arecaceae", name2="Liliopsida"){
-  
-  tax_table <- map_dfr(names(taxo), function(id){
-    
-    x <- taxo[[id]]
-    
-    tibble(
-      taxid   = as.integer(id),
-      
-      # monocot clade
-      is_in_vec = any(x$name == name1) & !any(x$name == name2)
-    )
-  })
-  
-  res_tab <- table(tax_table$is_in_vec)
-  res_taxid <- tax_table %>% filter(is_in_vec) 
-  
-  return(list(res_tab,res_taxid))
-}
-
-check_gf <- function(sp){
-  
-  res <- occ_search(
-    scientificName = sp,
-    country = "GF",
-    limit = 1
-  )
-  nrow(res$data) > 0
-}
-
-check_gf_all <- function(){
-  library(rgbif)
-  
-  # Clean species name
-  sp_clean <- tax_sp_vec(tax_table)
-  
-  # Get GBIF usage Keys
-  gbif_match <- name_backbone(name = sp_clean)
-  
-  # Get GBIF count of observations for each species
-  presence_GF <- map_int(
-    gbif_match$usageKey,
-    ~occ_count(taxonKey = .x, country = "GF")
-  )
-  # check if count > 0
-  tax_table$in_guyane <- presence_GF > 0
-  
-  # Apply test
-  gf_presence <- tibble(
-    species = sp_clean,
-    present_GF = sapply(sp_clean, check_gf)
-  )
-}
-
-clean_species <- function(x){
-  
-  x %>%
-    
-    # enlever cf / aff
-    gsub(" cf\\..*", "", .) %>%
-    gsub(" aff\\..*", "", .) %>%
-    
-    # # enlever sp.
-    # gsub(" sp\\..*", "", .) %>%
-    
-    # enlever collecteurs
-    gsub(" [A-Z][a-z]+ [0-9].*", "", .) %>%
-    
-    # enlever hybrides
-    gsub(" x .*", "", .) %>%
-    
-    trimws()
-}
-
-tax_valid_sp <- function(tax_table){
-  sp_vec <- tax_table %>% filter(!is.na(species)) %>% pull(species)
-  # Remove out format
-  sp_clean <- clean_species(sp_vec)
-  # Garder seulement les binomes
-  sp_clean <- sp_clean[grepl("^[A-Z][a-z]+ (sp\\.|[a-z-]+)$", sp_clean)]
-  return(sp_clean)
-}
-
-
-# # Plants zinger
-# setwd(paste0(PROJECT_PATH,"zinger/"))
-# zinger_plant <- read_obifasta("Zinger_et_al_metabar_PP1_Plants.uniq.fasta")
-
-
-
-# ==== ABIOTIC ====
+# ==== ABIOTIC (L.Zinger) ====
 
 import_abiotic <- function(){
   
-  data_samples <- read.table(
-    "/home/jean/Bureau/ADNe_Nourague_2026/zinger/Zinger_et_al_metabar_PP1_samples.txt",
-    header = TRUE,
-    comment.char = "#"
-  )
+  # Set directory
+  setwd(paste0(PROJECT_PATH,"Zinger_plants_nouragues/"))
   
-  # Select and split pcr
-  abiotic <- data_samples %>%
+  # Read TXT
+  data <- read.table("Zinger_et_al_metabar_PP1_samples.txt",
+                             header = TRUE,
+                             comment.char = "#")
+  
+  # Split samples name
+  abiotic <- data %>%
     separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
-    filter(!control)
+    filter(!control) # Remove controls
   
-  # Return Ref
   return(abiotic)
 }
 
-# ==== CREATE AND SAVE DATA ====
+# ==== PLANTS MORPHO (Giacomo) ====
 
-# Create
-samples_ref <- create_sample_ref()  # Samples names / position
-bota <- import_bota()   # Bota
-gene <- import_genet()  # Genet
-taxo <- get_all_classification()    # Classification genet
-tax_table <- create_taxid_ref(taxo) # Taxid
-abiotic <- import_abiotic()         # Abiotic
+import_plants_morpho <- function(){
+  
+  # Set directory
+  setwd(paste0(PROJECT_PATH,"data/Giacomo_plant_morpho/"))
+  
+  # Read XLS
+  data <- read_excel("Appendix_S2-6___S8-13.xlsx", sheet = "App.S6-ok", skip = 3)
+  
+  return(data)
+}
 
-# Save data
-save(
-  bota,
-  gene,
-  taxo,
-  tax_table,
-  samples_ref,
-  abiotic,
-  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport.RData"
-)
+# ==== PLANTS Nouragues (L.Zinger) ====
+
+import_plants_nouragues <- function(){
+  
+  # Set directory
+  setwd(paste0(PROJECT_PATH,"data/Zinger_plants_nouragues/METABAR_plantes/metadata/"))
+  
+  # Read XLS
+  data <- read_excel("Plants_Nouragues2001.xls")
+  
+  return(data)
+}
 
