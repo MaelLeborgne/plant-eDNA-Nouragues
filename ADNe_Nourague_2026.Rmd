@@ -15,7 +15,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(tidyverse) # %>%
-library(ggplot2) # Plot
+library(magrittr)  # %<>%
+library(dplyr)     # 
+library(ggplot2)   # Plot
 library(gridExtra) # Arrange plots
 library(patchwork) # Modern way to arrange plots (look at Density Grid plots)
 
@@ -31,8 +33,6 @@ library(ROBIFastread) # Read fasta
 # remotes::install_github("metabarcoding/robifastread")
 
 library(vegan) # toujour utile ?
-library(magrittr) # toujour utile ?
-library(dplyr) # toujour utile ?
 library(jsonify) # toujour utile ?
 
 library(Matrix) # output of OBITool
@@ -347,22 +347,6 @@ bota_model_NCI <- function(bota_focus){
   # Return
   grid
 }
-  
-  ## First commpute the distance
-  grid$dij <- pmap_int( # Apply a function to each coordinates (x,y)
-    list(grid$x, grid$y), # Element of iterations
-    \(x, y) sqrt((x - bota_focus$Xfield)^2 + 
-                 (y - bota_focus$Yfield)^2) # Euclidian distance between trees and center of pixels
-  )
-  
-  ## Keep only tree in 20m around
-  sel <- which(grid$dij < 20 & grid$dij > 0)
-    if (length(sel) == 0) { # Management of empty pixels
-      grid$NCI <- 0
-    } else { # Calcul of the Neighboor competition index
-      grid$NCI <- sum((bota_focus$CircCorr[sel]^2) * exp(-0.25 * grid$dij[sel]), na.rm = TRUE)
-    }
-  
 
 
 plot_grid <- function(grid, col_name){

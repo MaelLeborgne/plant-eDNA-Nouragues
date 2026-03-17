@@ -17,7 +17,8 @@ load(
 
 
 # ===== Source data and plots =====
-source("data_prep.R")
+source("grid.R")
+source("table.R")
 source("plots.R")
 
 # ===== User Interface =====
