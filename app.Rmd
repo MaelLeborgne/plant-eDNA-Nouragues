@@ -33,125 +33,136 @@ source("plots.R")
 
 ## Basic
 
-### Grid Genet
-
-```{r}
-
-# Config
-grid_config <- list(Level = "Family",
-                    Name = "Fabaceae",
-                    Metric = "OTU",
-                    Type = "genet",
-                    Rar = FALSE,
-                    Marker = "GH")
-# Filters
-grid_filters <- list(
-  filter_plant = FALSE,
-  filter_monocot = FALSE,
-  filter_na_family = FALSE,
-  filter_na_sp = FALSE,
-  filter_valid_sp = FALSE
-)
-# Read Grid
-grid <- grid_read(
-  config = grid_config,
-  filters = grid_filters
-)
-# Plot
-plot_grid_interp(grid)
-
-```
-
 ### Grid Bota
 
 ```{r}
+grid_config <- list(
+  Level = "Family",
+  Name = "Fabaceae",
+  Type = "bota",
+  Year = "2012",
+  Radius = 10,
+  Metric = "Count")
+
+grid <- grid_read(grid_config)
+
+plot_grid(grid)
+```
+
+### Grid Genet (test name not in genet)
+
+```{r}
+grid_config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Family",
+  Name = "Aaaaa", # Unkown Name
+  Metric = "Reads")
+
+grid <- grid_read(grid_config)
+
+plot_grid(grid)
+```
+
+### Grid Bota (all Metric)
+
+```{r}
 # Config
-grid_config <- list(Level = "Family",
-                    Name = "Fabaceae",
-                    Type = "bota",
-                    Year = "2012",
-                    Metric = "H1",
-                    Radius = 15)
+basic_config <- list(
+  Level = "Family",
+  Name = "Fabaceae",
+  Type = "bota",
+  Year = "2012",
+  Radius = 10)
+
 # No filters
 grid_filters <- list()
-# Grid Read
-grid <- grid_read(
-  config = grid_config,
-  filters = grid_filters
-)
-# Plot
-plot_grid(grid)
+
+# All metric
+all_metrics <- c("Count","NCI","OTU","Shannon","H1")
+
+# All plots
+all_plots <- list()
+
+for (m in all_metrics) {
+  grid_config <- basic_config
+  grid_config$Metric <- m
+  
+  # Grid Read
+  grid <- grid_read(
+    config = grid_config,
+    filters = grid_filters
+  )
+  
+  # Plot
+  all_plots[[m]] <- plot_grid(grid)
+  
+}
+
+Wrap <- wrap_plots(all_plots, ncol = 5) + 
+  plot_annotation(title = paste0("Toutes les Metrics pour l'inventaire :  ", basic_config$Type, " / ", basic_config$Level, " / ", basic_config$Name, " / R = ", basic_config$Radius))
+
+
+```
+
+### Grid Genet (all Metric)
+
+```{r}
+
+
+# Config
+basic_config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Family",
+  Name = "Fabaceae")
+
+# Filters
+grid_filters <- list()
+# grid_filters <- list(
+#   filter_plant = FALSE,
+#   filter_monocot = FALSE,
+#   filter_na_family = FALSE,
+#   filter_na_sp = FALSE,
+#   filter_valid_sp = FALSE
+# )
+
+
+# All metric
+all_metrics <- c("Reads","OTU","Shannon","H1")
+
+# All plots
+all_plots <- list()
+
+for (m in all_metrics) {
+  grid_config <- basic_config
+  grid_config$Metric <- m
+  
+  # Grid Read
+  grid <- grid_read(
+    config = grid_config,
+    filters = grid_filters
+  )
+  
+  # Plot
+  all_plots[[m]] <- plot_grid(grid)
+  
+}
+
+Wrap <- wrap_plots(all_plots, ncol = 4) + 
+  plot_annotation(title = paste0("Toutes les Metrics pour l'inventaire :  ", basic_config$Type, " / ", basic_config$Level, " / ", basic_config$Name)
+
 ```
 
 ## Others
 
 ```{r}
-# Fabaceae all filters
-filter_list <- list(
-  filter_plant = TRUE,
-  filter_monocot = TRUE,
-  filter_na_family = TRUE,
-  filter_na_sp = TRUE,
-  filter_valid_sp = TRUE
-)
-grid_fam <- genet_grid_read(
-  m = "GH",
-  l = "Family",
-  n = "Fabaceae",
-  from_csv = FALSE,
-  total = FALSE,
-  filters = filter_list
-)
-plot_grid(grid_fam,"OTU")
 
 
-filter_list <- list(
-  filter_plant = FALSE,
-  filter_monocot = FALSE,
-  filter_na_family = FALSE,
-  filter_na_sp = FALSE,
-  filter_valid_sp = FALSE
-)
 
-patch_compare(var_bota = "H1",
-              var_genet = "H1",
-              b_grid = bota_grid_H1(select_tax(bota,
-                                               Level = "Family",
-                                               Name= "All"),
-                                    R = 10),
-              g_grid = genet_grid_read(m = "GH",
-                                        l = "Family",
-                                        n = "All",
-                                        from_csv = FALSE,
-                                        rarefied = FALSE,
-                                        filters = filter_list,
-                                        total = FALSE),
-              b_f    = select_tax(bota,
-                                  Level = "Family",
-                                  Name= "All"),
-              stems  = FALSE,
-              Title = "Comparaison du nombre de Hill (q=1) de l'inventaire botanique et de l'inventaire génétique pour les dicots (reads non raréfiés)"
-              )
+patch_turbo_family(grid)
 
 
-filter_list <- list(
-  filter_plant = TRUE,
-  filter_monocot = TRUE,
-  filter_na_family = TRUE,
-  filter_na_sp = TRUE,
-  filter_valid_sp = TRUE
-)
-
-patch_turbo_family(var="OTU",
-                   filters = filter_list
-                   )
-
-# Familly Percent (filter to Family identified)
-filter_list <- list(
-  filter_plant = TRUE,
-  filter_monocot = TRUE,
-  filter_na_family = TRUE,
-  filter_na_sp = FALSE,
-  filter_valid_sp = FALSE
-)
 ```
