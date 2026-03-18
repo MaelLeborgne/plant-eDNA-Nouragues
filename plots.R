@@ -5,28 +5,32 @@
 # ===== Libraries =====
 library(tidyverse) # Basic
 library(ggplot2) # Plot
+library(viridis) # turbo
 library(patchwork)
+library(akima)  # pour l'interpolation 2D
 
 # ===== GENERAL =====
 
-plot_grid <- function(grid, stems = FALSE, bota_f = NULL) {
-  # Metric
-  var <- grid$config$Metric
+plot_grid <- function(grid, stems = FALSE, bota_focus = NULL) {
+  
+  # Configuration
+  df <- grid$df
+  config <- grid$config
   
   # Création du ggplot de base
-  p <- ggplot(grid$df, aes(x = x, y = y)) +
-    geom_tile(aes(fill = .data[[var]])) +
+  p <- ggplot(df, aes(x = x, y = y)) +
+    geom_tile(aes(fill = Metric)) +
     coord_fixed() +
     theme_minimal() +
-    labs(fill = var ) +
+    labs(fill = config$Metric ) +
     scale_fill_viridis_c(option = "turbo")
   
   # Ajouter les stems si demandé
   if(stems) {
-    if(is.null(bota_f)) stop("Vous devez fournir bota_f si stems = TRUE")
+    if(is.null(bota_focus)) stop("Vous devez fournir bota_f si stems = TRUE")
     p <- p +
       geom_point(
-        data = bota_f,
+        data = bota_focus,
         aes(x = Xfield, y = Yfield, size = CircCorr/10),
         shape = 21,   # cercle avec contour
         fill = NA,    # pas de remplissage
@@ -38,34 +42,24 @@ plot_grid <- function(grid, stems = FALSE, bota_f = NULL) {
   return(p)
 }
 
-plot_grid_turbo <- function(grid=genet_grid_read(), var="OTU") {
-  
-  # Création du ggplot de base
-  p <- ggplot(grid, aes(x = x, y = y)) +
-    geom_tile(aes(fill = .data[[var]])) +
-    coord_fixed() +
-    theme_minimal() +
-    labs(fill = var) +
-    scale_fill_viridis_c(option = "turbo")
-  
-  return(p)
-}
-
 # Fonction d'interpolation 2D
-interpolate_grid_2D <- function(grid=genet_grid_read(), var = "OTU", factor = 3, x = "x", y = "y") {
-  library(akima)  # pour l'interpolation 2D
+interpolate_grid_2D <- function(grid = genet_grid_read(), factor = 3) {
+  
+  # Configuration
+  G <- grid
+  df <- G$df
   
   # 1 Grille fine
-  dx <- min(diff(sort(unique(grid[[x]])))) / factor
-  dy <- min(diff(sort(unique(grid[[y]])))) / factor
-  x_fine <- seq(min(grid[[x]]), max(grid[[x]]), by = dx)
-  y_fine <- seq(min(grid[[y]]), max(grid[[y]]), by = dy)
+  dx <- min(diff(sort(unique(df$x)))) / factor
+  dy <- min(diff(sort(unique(df$y)))) / factor
+  x_fine <- seq(min(df$x), max(df$x), by = dx)
+  y_fine <- seq(min(df$y), max(df$y), by = dy)
   
   # 2 Interpolation 2D
   interp_res <- akima::interp(
-    x = grid[[x]],
-    y = grid[[y]],
-    z = grid[[var]],
+    x = df$x,
+    y = df$y,
+    z = df$Metric,
     xo = x_fine,
     yo = y_fine,
     linear = FALSE, # spline bicubique
@@ -83,11 +77,9 @@ interpolate_grid_2D <- function(grid=genet_grid_read(), var = "OTU", factor = 3,
 }
 
 # Fonction de plot
-plot_grid_turbo_2D_scaled <- function(grid = genet_grid_read(n="Putranjivaceae"), var = "OTU", factor = 5, family="Putranjivaceae") {
-  library(ggplot2)
-  library(viridis)
+plot_grid_interp <- function(grid, factor = 2) {
   
-  fine <- interpolate_grid_2D(grid, var, factor)
+  fine <- interpolate_grid_2D(grid, factor)
   
   # Valeurs limites pour positionner l'échelle
   x_min <- min(fine$x)
@@ -153,13 +145,10 @@ plot_grid_turbo_2D_scaled <- function(grid = genet_grid_read(n="Putranjivaceae")
       color = "white"
     )+
     # ajouter nom de la famille centré en bas
-    labs(caption = family)
+    labs(caption = grid$config$Name)
 }
 
 patch_turbo_family <- function(var = "OTU", filters = list()){
-  library(ggplot2)
-  library(viridis)
-  library(patchwork)
   
   # indices lettres pour sous-plots
   letters_idx <- letters[1:26]  # a-z

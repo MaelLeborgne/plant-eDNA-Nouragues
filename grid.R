@@ -72,100 +72,89 @@ select_tax <- function(Data, Level, Name){
 # ===== BOTA =====
 
 # Generic function to compute bota grid
-bota_grid_engine <- function(bota_focus,
-                             grid,
-                             R = 20,
-                             fun_pixel = function(df, sel, dij){length(sel)},
-                             return_comm = FALSE){
+bota_grid_engine <- function(B, G, fun_pixel
+                             ){
   
   # Configuration
-  df     <- grid$df
-  config <- grid$config
-  M      <- config$Metric
+  df <- G$df
+  C  <- G$config
+  R  <- C$Radius
   
-  if(config$return_comm){
-    grid$df[[M]] <- vector("list", nrow(grid))
-  } else {
-    grid$df[[M]] <- NA_real_
-  }
-  
+  # Pixel Loop
   for (pixel in 1:nrow(df)) {
+    
     # adresse du pixel
     px <- df$x[pixel]
     py <- df$y[pixel]
+    
     # distance de tout les arbre avec le pixel
-    dij <- sqrt((px - bota_focus$Xfield)^2 + 
-                  (py - bota_focus$Yfield)^2)
+    dij <- sqrt((px - B$Xfield)^2 + 
+                  (py - B$Yfield)^2)
+    
     # Sélectionner les arbres dans un intervale de distance
     sel <- which(dij < R & dij > 0)
     
-    if (length(sel) == 0) {
-      
-      if(config$return_comm){
-        grid[[M]][[pixel]] <- table()
-      } else {
-        grid[[M]][pixel] <- 0
-      }
-      
-    } else {
-      
-      if(return_comm){
-        grid[[M]][[pixel]] <- fun_pixel(bota_focus, sel, dij)
-      } else {
-        grid[[M]][pixel] <- fun_pixel(bota_focus, sel, dij)
-      }
-      
+    # fill the pixel with fun_pixel
+    if (length(sel) != 0) {
+        df$Metric[pixel] <- fun_pixel(B, sel, dij)
     }
   }
+  return(df)
+}
+
+# Apply conditions for bota grid calcul
+bota_grid_read <- function(grid){
+  
+  # Configuration
+  G <- grid
+  C <- G$config
+  R <- C$Radius
+  M <- C$Metric
+  
+  # Import bota
+  bota <- import_bota(C)
+  
+  # Select Taxa
+  B <- select_tax(bota, C$Level, C$Name)
+  
+  # Choix de la métrique botanique via switch
+  grid$df <- switch(M,
+               "Count"         = bota_grid_engine(B, G,
+                                                  function(df, sel, dij){
+                                                    length(sel)
+                                                    }),
+               "NCI"           = bota_grid_engine(B, G,
+                                                  function(df, sel, dij){
+                                                    sum((df$CircCorr[sel]^2) * 
+                                                          exp(-0.25 * dij[sel]),
+                                                        na.rm = TRUE)
+                                                    }),
+               "Basal_Area_m2" = bota_grid_engine(B, G,
+                                                  function(df, sel, dij){
+                                                    sum((bota[sel, ]$CircCorr^2) / (4 * pi * 10000))
+                                                    }),
+               "OTU"           = bota_grid_engine(B, G, 
+                                                  function(df, sel, dij){
+                                                    length(unique(df$Species[sel]))
+                                                    }),
+               "Shannon"       = bota_grid_engine(B, G,
+                                               function(df, sel, dij){
+                                                 sp_counts <- table(df$Species[sel])
+                                                 vegan::diversity(sp_counts, index = "shannon")
+                                                 }),
+               "H1"            = bota_grid_engine(B, G,
+                                              function(df, sel, dij){
+                                                sp_counts <- table(df$Species[sel])
+                                                exp(vegan::diversity(sp_counts, index = "shannon"))
+                                              }),
+               # "Gaussian"  = {
+               #   result <- optim_gauss(B)
+               #   bota_grid_Gauss(B, BETA = result$par[1], GAMMA = result$par[2])
+               # },
+               stop("Unknown var_bota: ", M)  # gestion d'erreur
+  )
   
   return(grid)
-}
-
-# Count
-bota_grid_count <- function(bota_focus = bota, 
-                            R = 10, 
-                            user_norm = FALSE
-                            ){
-  # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
-    var_name = "Count",
-    normalize = user_norm,
-    fun_pixel = function(df, sel, dij){
-      length(sel)
-    }
-  )
-}
-
-grid_basal_area <- function(bota_focus = bota, 
-                            R = 10, 
-                            user_norm = FALSE
-){
-  # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
-    var_name = "Basal_area_m2",
-    normalize = user_norm,
-    fun_pixel = function(df, sel, dij){
-      sum((bota[sel, ]$CircCorr^2) / (4 * pi * 10000))
-    }
-  )
-}
-
-# NCI
-bota_grid_NCI <- function(B, R, user_norm =FALSE){
-  # Give calcul to generic function
-  bota_grid_engine( B, R,
-    var_name = "NCI",
-    normalize = user_norm,
-    fun_pixel = function(df, sel, dij){
-      sum((df$CircCorr[sel]^2) * 
-            exp(-0.25 * dij[sel]),
-          na.rm = TRUE)
-    }
-  )
 }
 
 # # Gaussian
@@ -216,96 +205,19 @@ bota_grid_NCI <- function(B, R, user_norm =FALSE){
 #   return(res)
 # }
 
-# OTU
-bota_grid_OTU <- function(bota_focus, R = 15, user_norm){
-  # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
-    var_name = "OTU",
-    normalize = user_norm,
-    fun_pixel = function(df, sel, dij){
-      length(unique(df$Species[sel]))
-    }
-  )
-}
-
-bota_grid_OTU_matrice <- function(bota_focus, R = 15){
-  # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
-    var_name = "OTU",
-    normalize = FALSE,
-    return_comm = TRUE, # Matrice
-    fun_pixel = function(df, sel, dij){
-      table(df$Species[sel])
-    }
-  )
-}
-
-# Shannon
-bota_grid_shannon <- function(bota_focus, R = 20, user_norm){
-  # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
-    var_name = "Shannon",
-    normalize = user_norm,
-    fun_pixel = function(df, sel, dij){
-      sp_counts <- table(df$Species[sel])
-      vegan::diversity(sp_counts, index = "simpson")
-    }
-  )
-}
-
-# Shannon
-bota_grid_H1 <- function(bota_focus, R = 20, user_norm=FALSE){
-  # Give calcul to generic function
-  bota_grid_engine(
-    bota_focus,
-    R = R,
-    var_name = "H1",
-    normalize = user_norm,
-    fun_pixel = function(df, sel, dij){
-      sp_counts <- table(df$Species[sel])
-      shannon <- vegan::diversity(sp_counts, index = "simpson")
-      exp(shannon)
-    }
-  )
-}
-
-# Apply conditions for bota grid calcul
-bota_grid_read <- function(grid){
-  
-  # Configuration
-  config <- grid$config
-  R <- config$Radius
-  M <- config$Metric
-  
-  # Import bota
-  bota <- import_bota(config)
-  
-  # Select Taxa
-  B <- select_tax(bota, config$Level, config$Name)
-  
-  # Choix de la métrique botanique via switch
-  grid$df <- switch(M,
-               "Count"     = bota_grid_count(B, R),
-               "NCI"       = bota_grid_NCI(B),
-               # "Gaussian"  = {
-               #   result <- optim_gauss(B)
-               #   bota_grid_Gauss(B, BETA = result$par[1], GAMMA = result$par[2])
-               # },
-               "OTU"       = bota_grid_OTU(B, R),
-               "OTU_mat"   = bota_grid_OTU_matrice(B, R),
-               "Shannon"   = bota_grid_shannon(B, R),
-               stop("Unknown var_bota: ", M)  # gestion d'erreur
-  )
-  
-  return(grid)
-}
-
+# bota_grid_OTU_matrice <- function(bota_focus, R = 15){
+#   # Give calcul to generic function
+#   bota_grid_engine(
+#     bota_focus,
+#     R = R,
+#     var_name = "OTU",
+#     normalize = FALSE,
+#     return_comm = TRUE, # Matrice
+#     fun_pixel = function(df, sel, dij){
+#       table(df$Species[sel])
+#     }
+#   )
+# }
 
 
 # ===== GENET =====

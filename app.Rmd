@@ -17,10 +17,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
 
-load(
-  "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport.RData",
-  envir = .GlobalEnv
-  ) # import gene, bota...
+# load(
+#   "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.DataImport.RData",
+#   envir = .GlobalEnv
+#   ) # import gene, bota...
 
 source("data_import.R")
 source("filters.R")
@@ -58,7 +58,7 @@ grid <- grid_read(
   filters = grid_filters
 )
 # Plot
-plot_grid(grid)
+plot_grid_interp(grid)
 
 ```
 
@@ -70,9 +70,8 @@ grid_config <- list(Level = "Family",
                     Name = "Fabaceae",
                     Type = "bota",
                     Year = "2012",
-                    Metric = "OTU",
-                    Radius = 10,
-                    return_comm = FALSE)
+                    Metric = "H1",
+                    Radius = 15)
 # No filters
 grid_filters <- list()
 # Grid Read
