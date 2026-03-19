@@ -21,7 +21,9 @@ create_sample_ref <- function(){
   # Read TXT
   data_samples <- read.table("Zinger_et_al_metabar_PP1_samples.txt",
                              header = TRUE,
-                             comment.char = "#")
+                             comment.char = "#",
+                             fill = TRUE,
+                             blank.lines.skip = TRUE)
   
   # Extracts samples name and position
   sample_ref <- data_samples %>%
@@ -49,7 +51,7 @@ import_bota <- function(config){
       mutate(Species = paste(Genus, Species, sep=" "))
   }
   else{
-    stop("Unknown Year: ", config$Year)
+    stop("Unknown config$Year : ", config$Year)
   }
 
   return(bota)
@@ -99,9 +101,17 @@ import_genet <- function(config){
   if(config$Rar){ 
     data <- select_rar(config)
   }
-  else{ # Or not
+  else if(!config$Rar){ # Or not rarefied
     data <- select_clust(config)
   }
+  else{
+    stop("Unknown config$Rar: ", config$Rar)
+  }
+  
+  # Create filtering columns
+  data$motus$not_na_family <- !is.na(data$motus$family)
+  data$motus$not_na_genus <- !is.na(data$motus$genus)
+  data$motus$not_na_species<- !is.na(data$motus$species)
   
   return(data)
 }

@@ -35,7 +35,7 @@ ref_grid <- function(){
   return(df)
 }
 
-init_grid <- function(config, filters){
+init_grid <- function(config, filters = list()){
   
   # Empty list
   grid <- list()
@@ -52,12 +52,12 @@ init_grid <- function(config, filters){
   return(grid)
 }
 
-# ==== SELECT TAXA ====
+# ==== TAXA FILTERS ====
 select_tax <- function(Data, Level, Name){
   
   focus <- NULL
   
-  if(Name=="All"){
+  if(Name == "All"){
     focus <- Data
   }
   else{
@@ -67,6 +67,42 @@ select_tax <- function(Data, Level, Name){
   
   # Return
   return(focus)
+}
+
+apply_filters <- function(df,
+                          # filter_plant = TRUE,
+                          # filter_monocot = TRUE,
+                          filter_na_family = FALSE,
+                          filter_na_genus = FALSE,
+                          filter_na_sp = FALSE
+                          # filter_valid_sp = TRUE
+                          ){
+  
+  # if(filter_plant){
+  #   df <- df %>% dplyr::filter(is_plant)
+  # }
+  # 
+  # if(filter_monocot){
+  #   df <- df %>% dplyr::filter(!is_monocot)
+  # }
+  
+  if(filter_na_family){
+    df <- df %>% dplyr::filter(not_na_family)
+  }
+  
+  if(filter_na_genus){
+    df <- df %>% dplyr::filter(not_na_genus)
+  }
+  
+  if(filter_na_sp){
+    df <- df %>% dplyr::filter(not_na_sp)
+  }
+  
+  # if(filter_valid_sp){
+  #   df <- df %>% dplyr::filter(valid_sp_name)
+  # }
+  
+  return(df)
 }
 
 # ===== BOTA =====
@@ -103,7 +139,7 @@ bota_grid_engine <- function(G, B, fun_pixel
 }
 
 # Apply conditions for bota grid calcul
-bota_grid_read <- function(grid){
+bota_grid_read <- function(grid, filters=list()){
   
   # Configuration
   G <- grid
@@ -115,7 +151,8 @@ bota_grid_read <- function(grid){
   bota <- import_bota(C)
   
   # Select Taxa
-  B <- select_tax(bota, C$Level, C$Name)
+  B <- select_tax(bota, C$Level, C$Name) %>%
+    apply_filters(filters)    # Apply filters
   
   # Choix de la métrique botanique via switch
   grid$df <- switch(M,
@@ -224,24 +261,23 @@ bota_grid_read <- function(grid){
 
 # ==== GENET READ ====
 
-genet_grid_read <- function(grid){
+genet_grid_read <- function(grid, filters = list()){
   
   # Configuration
   G <- grid
   C <- G$config
-  R <- C$Radius
   M <- C$Metric
   
   # Import genet
   genet <- import_genet(C)
   
   # Select OTU_id
-  otu_list <- select_tax(genet$motus, tolower(C$Level), C$Name) %>%
-    filter(!is.na(id)) %>%
-    pull(id)
+  otu_list <- select_tax(genet$motus, tolower(C$Level), C$Name) # Select Taxa
+  otu_list <- rlang::exec(apply_filters, otu_list, !!!filters) %>% # Apply otu filters
+    filter(!is.na(id)) %>% pull(id)     # get otu_id
   
   # Select Reads from OTU_id
-  reads_filtered <- genet$reads[, colnames(genet$reads) %in% otu_list]
+  reads_filtered <- genet$reads[, colnames(genet$reads) %in% otu_list, drop = FALSE]
   
   # Create dataframe for calcul
   metric_df <- data.frame(sample_loc = rownames(reads_filtered))
@@ -269,17 +305,20 @@ genet_grid_read <- function(grid){
 
 # ==== GRID READ ====
 
-grid_read <- function(config, filters = list()){
+grid_read <- function(config, filters=list()){
   
   # Initialize Grid
-  grid <- init_grid(config, filters)
+  grid <- init_grid(config)
   
   # Fill Grid
   if(config$Type == "bota"){
-    grid <- bota_grid_read(grid)
+    grid <- bota_grid_read(grid, filters)
   }
   else if (config$Type == "genet"){
-    grid <- genet_grid_read(grid)
+    grid <- genet_grid_read(grid, filters)
+  }
+  else{
+    stop(paste0("Unknown config$Type : ", config$Type))
   }
   
   return(grid)

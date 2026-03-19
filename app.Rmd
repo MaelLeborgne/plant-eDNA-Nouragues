@@ -38,7 +38,7 @@ source("plots.R")
 ```{r}
 grid_config <- list(
   Level = "Family",
-  Name = "Fabaceae",
+  Name = "All",
   Type = "bota",
   Year = "2012",
   Radius = 10,
@@ -47,6 +47,20 @@ grid_config <- list(
 grid <- grid_read(grid_config)
 
 plot_grid(grid)
+```
+
+```{r}
+grid_config <- list(
+  Level = "Family",
+  Name = "Fabaceae",
+  Type = "bota",
+  Year = "2012",
+  Radius = 10,
+  Metric = "Basal_Area_m2")
+
+grid <- grid_read(grid_config)
+
+plot_grid_interp(grid)
 ```
 
 ### Grid Genet (test name not in genet)
@@ -80,7 +94,7 @@ basic_config <- list(
 grid_filters <- list()
 
 # All metric
-all_metrics <- c("Count","NCI","OTU","Shannon","H1")
+all_metrics <- c("Count","NCI","Basal_Area_m2","OTU","Shannon","H1")
 
 # All plots
 all_plots <- list()
@@ -100,7 +114,7 @@ for (m in all_metrics) {
   
 }
 
-Wrap <- wrap_plots(all_plots, ncol = 5) + 
+Wrap <- wrap_plots(all_plots, ncol = 3) + 
   plot_annotation(title = paste0("Toutes les Metrics pour l'inventaire :  ", basic_config$Type, " / ", basic_config$Level, " / ", basic_config$Name, " / R = ", basic_config$Radius))
 
 
@@ -156,13 +170,49 @@ Wrap <- wrap_plots(all_plots, ncol = 4) +
 
 ```
 
-## Others
+## Patchs
 
 ```{r}
 
+patch_turbo_family()
 
 
-patch_turbo_family(grid)
+```
 
+## Give names
+
+```{r}
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Family"
+)
+
+give_level_names(config)
+
+config <- list(
+  Type = "bota",
+  Year = 2012,
+  Level = "Family"
+)
+
+give_level_names(config)
+```
+
+```{r}
+
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Family",
+  Metric = "Reads")
+
+ab_rel_tab <- summary_ab_rel(config)
+
+# sum(ab_rel_tab$Metric)
+# 58.92074
+# Pas 100% car on inclu les non family identified dans le total
 
 ```
