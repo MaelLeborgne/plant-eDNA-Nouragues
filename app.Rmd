@@ -44,6 +44,8 @@ grid_config <- list(
   Radius = 10,
   Metric = "Count")
 
+bota <- import_bota(grid_config)
+
 grid <- grid_read(grid_config)
 
 plot_grid(grid)
@@ -61,6 +63,24 @@ grid_config <- list(
 grid <- grid_read(grid_config)
 
 plot_grid_interp(grid)
+```
+
+### Grid Genet
+
+```{r}
+grid_config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Family",
+  Name = "All",
+  Metric = "Reads")
+
+genet_gh <- import_genet(grid_config)
+
+grid <- grid_read(grid_config)
+
+plot_grid(grid)
 ```
 
 ### Grid Genet (test name not in genet)
@@ -193,26 +213,339 @@ give_level_names(config)
 
 config <- list(
   Type = "bota",
-  Year = 2012,
+  Year = "2012",
   Level = "Family"
 )
 
 give_level_names(config)
 ```
 
+## Tables d'Abondance realtives
+
+### Test with family level
+
 ```{r}
 
+# ==== TEST 1 ====
+test_1 <- expand.grid(
+  Type = "genet",
+  Rar = c(FALSE,TRUE),
+  Marker = c("GH","ITS","18S"),
+  Level = c("Family"),#,"Genus","Species"),
+  Metric = "Reads",
+  stringsAsFactors = FALSE
+)
+
+# Calcul tabs
+test_1$Result <- lapply(seq_len(nrow(test_1)), function(i) {
+  message("Iteration ", i)
+  summary_ab_rel(as.list(test_1[i, ]))
+})
+
+# Check 100%
+test_1$Check_100 <- lapply(seq_len(nrow(test_1)), function(i) {
+  sum(test_1$Result[[i]]$Metric)
+})
+
+# Print results
+view(test_1)
+
+# Why 18S fail ?
+test_1$Result[[5]]
+config <- as.list(test_1[5,])
+# Replace : by . in otu_list
+
+# Keep only GH and ITS
+test_1 <- test_1[1:4,]
+
+# ==== TEST 2 ====
+test_2 <- expand.grid(
+  Type = "genet",
+  Rar = c(FALSE,TRUE),
+  Marker = c("18S"),
+  Level = c("Family"),#,"Genus","Species"),
+  Metric = "Reads",
+  stringsAsFactors = FALSE
+)
+# Fill results
+test_2 <- test_ab_rel_sum(test_2)
+# View
+view(test_2)
+
+# ==== TEST 3 ====
+test_3 <- expand.grid(
+  Type = "bota",
+  Year = "2012",
+  Level = "Family",
+  Metric = "Count",
+  Radius = "pixel",
+  stringsAsFactors = FALSE
+)
+# Fill results
+test_3 <- test_ab_rel_sum(test_3)
+# View
+view(test_3)
+
+
+# df_combined <- bind_rows(test_1, test_2, test_3)
+remove_bota <- df_combined[1:6,]
+df_combined <- bind_rows(remove_bota, test_3)
+
+# Save data
+# save( df_combined,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.all_ab_rel_familly_tab.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.all_ab_rel_familly_tab.RData",
+#   envir = .GlobalEnv)
+
+```
+
+### Replace \< 2% families
+
+```{r}
+
+df_reduced <- df_combined
+
+df_reduced$Result <- lapply(seq_len(nrow(df_reduced)), function(i) {
+    df_reduced$Result[[i]] %>% percent_other("Clade", "Metric", 2)
+  })
+
+
+# Liste des indices correspondant aux différentes sources
+source_indices <- c(1, 2, 3, 4, 5, 6, 7)
+source_names <- c( "GH","GH", "ITS","ITS", "18S","18S", "Bota")
+
+# Appliquer une fonction à chaque élément de la liste df_reduced$Result
+df_list <- lapply(seq_along(source_indices), function(i) {
+  # Extraire le dataframe correspondant
+  df_temp <- df_reduced$Result[[source_indices[i]]]
+  
+  # Ajouter la colonne Source
+  df_temp$Source <- source_names[i]
+  
+  return(df_temp)
+})
+
+# Sélectionner les éléments de df_list à combiner
+df_plot_clust <- bind_rows(df_list[c(1, 3, 5, 7)])
+
+# Créer le graphique avec ggplot2
+clust <- ggplot(df_plot_clust, aes(x = Source, y = Metric, fill = Clade)) + 
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Bota", y = "Proportion (%)", fill = "Clade") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) + # Affiche en pourcentage
+  theme_minimal() +
+  ggtitle("Proportion par Clade")
+
+
+
+# Sélectionner les éléments de df_list à combiner
+df_plot_rar <- bind_rows(df_list[c(2, 4, 6, 7)])
+
+# Créer le graphique avec ggplot2
+rar <- ggplot(df_plot_rar, aes(x = Source, y = Metric, fill = Clade)) + 
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Bota", y = "Proportion (%)", fill = "Clade") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) + # Affiche en pourcentage
+  theme_minimal() +
+  ggtitle("Proportion par Clade")
+
+
+```
+
+## Correlation tab
+
+### Family Count / NCI
+
+```{r}
+
+# Make tab of configurations
+config_1 <- expand.grid(
+  "g.Rar" = c(FALSE),
+  "g.Marker" = c("GH","ITS","18S"),
+  "g.Metric" = c("Reads"),
+  "b.Metric" = c("Count","NCI"),
+  "b.Radius" = c(10),
+  "b.Year" = c(2012),
+  "Level" = c("Family"),
+  stringsAsFactors = FALSE
+)
+
+# Give common Names
+level_names <- give_common_family()
+
+# Correlation Tab
+tab_1 <- make_cor_table_bota_genet(config_1, level_names)
+
+# Plot
+corr_tab(tab_1)
+
+# Save data
+# save( tab_1,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_1.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_1.RData",
+#   envir = .GlobalEnv)
+```
+
+## Presence / Absence
+
+```{r}
+
+# Bota
+config <- list(
+  Level = "Family",
+  Name = "Fabaceae",
+  Type = "bota",
+  Year = "2012",
+  Radius = 10,
+  Metric = "Presence")
+
+bota <- import_bota(config)
+
+grid <- grid_read(config)
+
+plot_grid(grid)
+
+# Genet
 config <- list(
   Type = "genet",
   Rar = FALSE,
   Marker = "GH",
-  Level = "Family",
-  Metric = "Reads")
+  Level = "Species",
+  Name = "Salvia textitlana",
+  Metric = "Presence")
 
-ab_rel_tab <- summary_ab_rel(config)
+genet_gh <- import_genet(config)
 
-# sum(ab_rel_tab$Metric)
-# 58.92074
-# Pas 100% car on inclu les non family identified dans le total
+grid <- grid_read(config)
 
+plot_grid(grid)
+
+```
+
+### Family T+ / T- / MCC
+
+```{r}
+
+# ==== TEST 2 ====
+config_2 <- expand.grid(
+  "g.Rar" = c(FALSE),
+  "g.Marker" = c("GH","ITS","18S"),
+  "g.Metric" = c("Presence"),
+  "b.Metric" = c("Presence"),
+  "b.Radius" = 10,
+  "b.Year" = c(2012),
+  "Metric_spe" = c("T+","T-","MCC"),
+  "Level" = c("Family"),
+  stringsAsFactors = FALSE
+)
+
+# Give common Names
+level_names <- give_common_family()
+
+# Make correlation table
+tab_2 <- make_cor_table_bota_genet(config_2, level_names)
+
+# Plot
+corr_tab(tab_2)
+
+# Save data
+# save( tab_2,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_2.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_2.RData",
+#   envir = .GlobalEnv)
+
+```
+
+### Species
+
+```{r}
+# ==== TEST 3 ====
+config_3 <- expand.grid(
+  "g.Rar" = c(FALSE),
+  "g.Marker" = c("GH","ITS","18S"),
+  "g.Metric" = c("Presence"),
+  "b.Metric" = c("Presence"),
+  "b.Radius" = 10,
+  "b.Year" = c(2012),
+  "Metric_spe" = c("T+","T-","MCC"),
+  "Level" = c("Family"),
+  stringsAsFactors = FALSE
+)
+
+# Give common Names
+spe_vec <- give_common_species()
+
+# Make correlation table
+tab_3 <- make_cor_table_bota_genet(config_3, spe_vec)
+
+# Print correlation table
+corr_tab(tab_3)
+
+# Save data
+# save( tab_3,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_3.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_3.RData",
+#   envir = .GlobalEnv)
+
+```
+
+```{r}
+# ==== TEST 11 ====
+config_4 <- expand.grid(
+  "g.Rar" = c(FALSE),
+  "g.Marker" = c("GH","ITS","18S"),
+  "g.Metric" = c("Reads"),
+  "b.Metric" = c("Count","NCI"),
+  "b.Radius" = 10,
+  "b.Year" = c(2012),
+  "Level" = c("Species"),
+  stringsAsFactors = FALSE
+)
+
+# Give common Names
+spe_vec <- give_common_species()
+
+# Make correlation table
+tab_4 <- make_cor_table_bota_genet(config_4, spe_vec)
+
+tab_4$Metric_spe <- tab_4$b.Metric
+
+# Print correlation table
+corr_tab(tab_4)
+
+# Save data
+# save( tab_4,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_4.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_4.RData",
+#   envir = .GlobalEnv)
+```
+
+```{r}
+
+# GH
+tab_gh <- tab_11[tab_11$g.Marker=="GH",]
+# ANOVA Metric
+res_aov <- aov(Correlation ~ Metric_spe, data = tab_gh)
+summary(res_aov)
+
+
+```
+
+```{r}
+
+df_list <- list(
+  tab_1,
+  tab_2,
+  tab_3,
+  tab_4
+)
+
+df_corr_tot <- bind_rows(df_list)
+
+corr_tab(df_corr_tot)
 ```

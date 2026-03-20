@@ -230,6 +230,34 @@ patch_turbo_family <- function(factor = 1){
   patchwork::wrap_plots(plots, ncol = 7)
 }
 
+# ===== 2. CORRELATION TABLE =====
+
+corr_tab <- function(config_tab){
+  ggplot(config_tab, aes(x = interaction(Metric_spe,g.Marker),
+                          y = interaction(Level, Name),
+                          fill = Correlation)) +
+    geom_tile(color = "grey80") +
+    geom_text(aes(label = round(Correlation, 2)), size = 3.5) +
+    scale_fill_gradient2(
+      low = "blue",
+      mid = "white",
+      high = "red",
+      midpoint = 0,
+      limits = c(-1, 1),
+      na.value = "white"
+    ) +
+    scale_x_discrete(
+      labels = function(x) gsub("\\.", "\n", x)  # saute ligne entre Marker et Metric
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Marker / Metric",
+      y = config_tab$Level[1],
+      fill = "Correlation"
+    )
+}
+
+
 # ===== < DEPRECATED > =====
 
 patch_turbo_species <- function(){
@@ -727,7 +755,7 @@ plot_tab_familly_multi <- function() {
   return(p)
 }
 
-# ===== 2. CORRELATION TABLE =====
+
 
 # ===== 3. CORRELOGRAME RADIUS =====
 

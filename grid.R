@@ -127,8 +127,16 @@ bota_grid_engine <- function(G, B, fun_pixel
     dij <- sqrt((px - B$Xfield)^2 + 
                   (py - B$Yfield)^2)
     
-    # Sélectionner les arbres dans un intervale de distance
-    sel <- which(dij < R & dij > 0)
+    if(R == "pixel"){
+      sel <- which(B$Xfield > px-5 &
+                   B$Xfield < px+5 &
+                   B$Yfield > py-5 &
+                   B$Yfield < py+5)
+    }
+    else{
+      # Sélectionner les arbres dans un intervale de distance
+      sel <- which(dij < R & dij > 0)
+    }
     
     # fill the pixel with fun_pixel
     if (length(sel) != 0) {
@@ -151,8 +159,9 @@ bota_grid_read <- function(grid, filters=list()){
   bota <- import_bota(C)
   
   # Select Taxa
-  B <- select_tax(bota, C$Level, C$Name) %>%
-    apply_filters(filters)    # Apply filters
+  B <- select_tax(bota, C$Level, C$Name)
+  # Apply filters
+  B <- rlang::exec(apply_filters, B, !!!filters) 
   
   # Choix de la métrique botanique via switch
   grid$df <- switch(M,
@@ -166,6 +175,10 @@ bota_grid_read <- function(grid, filters=list()){
                                                           exp(-0.25 * dij[sel]),
                                                         na.rm = TRUE)
                                                     }),
+               "Presence"         = bota_grid_engine(G, B,
+                                                  function(df, sel, dij){
+                                                    as.integer(length(sel)>0)
+                                                  }),
                "Basal_Area_m2" = bota_grid_engine(G, B,
                                                   function(df, sel, dij){
                                                     sum((bota[sel, ]$CircCorr^2) / (4 * pi * 10000))
@@ -271,10 +284,15 @@ genet_grid_read <- function(grid, filters = list()){
   # Import genet
   genet <- import_genet(C)
   
-  # Select OTU_id
-  otu_list <- select_tax(genet$motus, tolower(C$Level), C$Name) # Select Taxa
-  otu_list <- rlang::exec(apply_filters, otu_list, !!!filters) %>% # Apply otu filters
-    filter(!is.na(id)) %>% pull(id)     # get otu_id
+  # Select OTU
+  otu_list <- select_tax(genet$motus, tolower(C$Level), C$Name)
+  # Apply otu filters
+  otu_list <- rlang::exec(apply_filters, otu_list, !!!filters) 
+  # get otu_id
+  otu_list <- otu_list %>% filter(!is.na(id)) %>% pull(id)     
+  # Replace : and - by . # (18S anomaly)
+  otu_list <- gsub(":", ".", otu_list)
+  otu_list <- gsub("-", ".", otu_list)
   
   # Select Reads from OTU_id
   reads_filtered <- genet$reads[, colnames(genet$reads) %in% otu_list, drop = FALSE]
@@ -286,6 +304,7 @@ genet_grid_read <- function(grid, filters = list()){
   metric_df$Metric <- switch(M,
                     "Reads"         = rowSums(reads_filtered),
                     "OTU"           = rowSums(reads_filtered > 0),
+                    "Presence"      = as.integer(rowSums(reads_filtered > 0) > 0),
                     "Shannon"       = diversity(reads_filtered, index = "shannon"),
                     "H1"            = exp(diversity(reads_filtered, index = "shannon")),
                     stop("Unknown Metric: ", M)  # gestion d'erreur

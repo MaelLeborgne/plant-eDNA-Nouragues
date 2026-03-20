@@ -43,18 +43,23 @@ import_bota <- function(config){
   
   # Select Year
   if(config$Year == "2012"){
-    bota <- read.csv("Nour_2012.csv",sep = ",",dec = ".") %>%
+    data <- read.csv("Nour_2012.csv",sep = ",",dec = ".") %>%
       mutate(Species = paste(Genus, Species, sep=" "))
   }
   else if(config$Year == "2022"){
-    bota <- read.csv("Nour_2022.csv",sep = ",",dec = ".") %>%
+    data <- read.csv("Nour_2022.csv",sep = ",",dec = ".") %>%
       mutate(Species = paste(Genus, Species, sep=" "))
   }
   else{
     stop("Unknown config$Year : ", config$Year)
   }
+  
+  # Create filtering columns
+  data$not_na_family <- !is.na(data$Family)
+  data$not_na_genus <- !is.na(data$Genus)
+  data$not_na_species <- !is.na(data$Species)
 
-  return(bota)
+  return(data)
 }
 
 # ==== GENET (I.Calderon) ====

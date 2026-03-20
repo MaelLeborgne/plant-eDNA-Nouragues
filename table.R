@@ -59,7 +59,7 @@ summary_ab_rel <- function(config){
   config_all <- config
   config_all$Name <- "All"
   filters <- filter_select_level(config$Level)
-  
+  # Read grid All
   grid_all <- grid_read(config_all, filters)
   total <- sum(grid_all$df$Metric)
   
@@ -90,29 +90,44 @@ summary_ab_rel <- function(config){
   return(final_df)
 }
 
-# percent_other <- function(df, var_ref, var_per_cols, threshold){
-#   
-#   # lignes sous le seuil
-#   df_low <- df %>%
-#     dplyr::filter(.data[[var_per_cols[1]]] < threshold)
-#   
-#   # somme des colonnes de pourcentage
-#   other_percent <- df_low %>%
-#     dplyr::summarise(across(all_of(var_per_cols), sum, na.rm = TRUE))
-#   
-#   # ligne "Other"
-#   line_other <- other_percent %>%
-#     dplyr::mutate(!!var_ref := paste0("<", threshold, "%")) %>%
-#     dplyr::select(all_of(var_ref), everything())
-#   
-#   # retirer lignes < threshold et ajouter Other
-#   df <- df %>%
-#     dplyr::filter(.data[[var_per_cols[1]]] >= threshold) %>%
-#     dplyr::bind_rows(line_other)
-#   
-#   return(df)
-# }
-# 
+test_ab_rel_sum <- function(config_table){
+  # Calcul tabs
+  config_table$Result <- lapply(seq_len(nrow(config_table)), function(i) {
+    message("Iteration ", i)
+    summary_ab_rel(as.list(config_table[i, ]))
+  })
+  
+  # Check 100%
+  config_table$Check_100 <- lapply(seq_len(nrow(config_table)), function(i) {
+    sum(config_table$Result[[i]]$Metric)
+  })
+  
+  return(config_table)
+}
+
+percent_other <- function(df, var_ref, var_per_cols, threshold){
+
+  # lignes sous le seuil
+  df_low <- df %>%
+    dplyr::filter(.data[[var_per_cols[1]]] < threshold)
+
+  # somme des colonnes de pourcentage
+  other_percent <- df_low %>%
+    dplyr::summarise(across(all_of(var_per_cols), sum, na.rm = TRUE))
+
+  # ligne "Other"
+  line_other <- other_percent %>%
+    dplyr::mutate(!!var_ref := paste0("<", threshold, "%")) %>%
+    dplyr::select(all_of(var_ref), everything())
+
+  # retirer lignes < threshold et ajouter Other
+  df <- df %>%
+    dplyr::filter(.data[[var_per_cols[1]]] >= threshold) %>%
+    dplyr::bind_rows(line_other)
+
+  return(df)
+}
+
 # percent_out_bota <- function(df, 
 #                              var_ref ="Clade", 
 #                              var_per = "Genet_ab_rel", 
@@ -158,49 +173,94 @@ bota_names <- function(){
   return(list_bota)
 }
 
-make_cor_table_bota_genet <- function(){
+
+# Common Family for RAREFIED data
+give_common_family <-function(){
   
-  # Make tab of configurations
-  config_tab <- expand.grid(
-    "g.Rar" = c(FALSE),
-    "g.Marker" = c("GH","ITS","18S"),
-    "g.Metric" = c("Reads"),
-    "b.Metric" = c("Count"),#,"NCI"),
-    "b.Radius" = c(10),
-    "b.Year" = c(2012),
-    "Level" = c("Family"),#, "Genus", "Species"),
-    stringsAsFactors = FALSE
+  # Join result from ab_rel_tabs
+  res1 <- inner_join(df_list[[1]],df_list[[7]],by="Clade")
+  res3 <- inner_join(df_list[[3]],df_list[[7]],by="Clade")
+  res5 <- inner_join(df_list[[5]],df_list[[7]],by="Clade")
+  res_tot <- list(res1,res3,res5) %>% reduce(full_join, by = "Clade")
+  
+  # Take clade names
+  names <- res_tot$Clade
+  names <- names[names != "<2%"]
+  
+  return(names)
+}
+
+# UN-RAREFIED
+give_genet_species <- function(Marker){
+  
+  # Config
+  config <- list(
+    Type = "genet",
+    Rar = FALSE,
+    Marker = Marker
   )
+  # Import
+  genet <- import_genet(config)
   
-  # Read "Name" for all Levels
-  list_bota <- bota_names()
+  # Genet not na species
+  genet <- genet$motus %>%
+    filter(!is.na(.data[["species"]])) # remove NA
+  
+  # Species vector
+  spe_vec <- unique(genet[["species"]])
+    
+  return(spe_vec)
+}
+
+# Common species for UN-RAREFIED data
+give_common_species <-function(){
+  
+  df_list <- list()
+  
+  # Import Bota
+  config <- list(
+    Year = 2012
+  )
+  df_list[[1]] <- import_bota(config) %>%
+    filter(!is.na(Species)) %>%
+    pull(Species)
+  df_list[[1]] <- data.frame(Clade = unique(df_list[[1]]))
+  
+  # Import genet
+  df_list[[2]] <- give_genet_species("GH")
+  df_list[[2]] <- data.frame(Clade = df_list[[2]])
+  df_list[[3]] <- give_genet_species("ITS")
+  df_list[[3]] <- data.frame(Clade = df_list[[3]])
+  df_list[[4]] <- give_genet_species("18S")
+  df_list[[4]] <- data.frame(Clade = df_list[[4]])
+  
+  # Join result from ab_rel_tabs
+  res2 <- inner_join(df_list[[1]],df_list[[2]],by="Clade")
+  res3 <- inner_join(df_list[[1]],df_list[[3]],by="Clade")
+  res4 <- inner_join(df_list[[1]],df_list[[4]],by="Clade")
+  res_tot <- list(res2,res3,res4) %>% reduce(full_join, by = "Clade")
+  
+  # Take clade names
+  names <- res_tot$Clade
+  
+  return(names)
+}
+
+make_cor_table_bota_genet <- function(config_tab, level_names){
+  
   # Add Name by Level
   config_tab <- config_tab %>%
     rowwise() %>%                        # travailler ligne par ligne
-    mutate(Name = list(list_bota[[Level]])) %>%  # créer une liste de Names
+    mutate(Name = list(level_names)) %>%  # créer une liste de Names
     unnest(Name)                          # transformer la liste en lignes
   
+  # Init column
+  config_tab$Correlation <- 0
   for(i in 1:nrow(config_tab)){
     print(i)
     # Compute grid correlation
     config_tab$Correlation[[i]] <- grid_correlation(config_tab[i,])
   }
-  
-  # length(list_bota$Family)
-  # 63
-  # Level = Family
-  # 378
-  # Level = All
-  # 5346
-  # TODO:
-  # - Enlever les espèce/genus/family absente de génèt
-  # - Enlever les famille de moin de 1% d'abondance relative (refaire la tab_ab_rel)
-  
-  # TEST
-  # test_line <- config_tab[56,]
-  # grid_correlation(test_line)
-  # Erreur dans rowSums(reads_filtered) : 
-  # 'x' doit être un tableau ayant au moins 2 dimensions
   
   return(config_tab)
 }
@@ -212,16 +272,39 @@ grid_correlation <- function(row){
   
   # Read Bota grid
   grid_bota <- grid_read(configs$bota)
+  B <- grid_bota$df
   
   # Read Genet grid
   grid_genet <- grid_read(configs$genet)
+  G <- grid_genet$df
   
-  # calcul grid correlation
-  grid_corr <- cor(grid_bota$df$Metric, 
-                   grid_genet$df$Metric)
+  # Join
+  BG <- inner_join(B, G, by = "sample_loc") 
+  
+  # True positive and true négative
+  BG <- BG %>%
+    mutate(tp = Metric.x == 1 & Metric.y == 1, # bota 1 genet 1
+           tn = Metric.x == 0 & Metric.y == 0, # bota 0 genet 0
+           )
+  # Ratios
+  Tp <- sum(BG$tp)/length(BG$tp)
+  Tn <- sum(BG$tn)/length(BG$tn)
+  
+  if(!"Metric_spe" %in% names(row)){
+    row$Metric_spe <- row$b.Metric
+  }
+  
+  # Select Final metric
+  grid_corr <- switch(row$Metric_spe,
+                      "Count" = cor(B$Metric, G$Metric),
+                      "NCI"   = cor(B$Metric, G$Metric),
+                      "T+"    = Tp, # True positive
+                      "T-"    = Tn, # True negative
+                      "MCC"   = mcc(BG$Metric.x, BG$Metric.y),
+                      stop(paste0("Unknown Metric :", configs$bota$Metric))
+  )
   
   return(grid_corr)
-  
 }
 
 extract_configs <- function(row) {
@@ -246,6 +329,25 @@ extract_configs <- function(row) {
     bota  = bot_config,
     genet = genet_config
   )
+}
+
+mcc <- function(x, y) {
+  TP <- sum(x == 1 & y == 1, na.rm = TRUE)
+  TN <- sum(x == 0 & y == 0, na.rm = TRUE)
+  FP <- sum(x == 0 & y == 1, na.rm = TRUE)
+  FN <- sum(x == 1 & y == 0, na.rm = TRUE)
+  
+  # conversion en numérique pour éviter overflow
+  TP <- as.numeric(TP)
+  TN <- as.numeric(TN)
+  FP <- as.numeric(FP)
+  FN <- as.numeric(FN)
+  
+  denom <- sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+  
+  if (is.na(denom) || denom == 0) return(NA_real_)
+  
+  (TP * TN - FP * FN) / denom
 }
 
 
