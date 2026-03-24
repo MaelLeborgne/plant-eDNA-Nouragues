@@ -135,7 +135,14 @@ for (m in all_metrics) {
 }
 
 Wrap <- wrap_plots(all_plots, ncol = 3) + 
-  plot_annotation(title = paste0("Toutes les Metrics pour l'inventaire :  ", basic_config$Type, " / ", basic_config$Level, " / ", basic_config$Name, " / R = ", basic_config$Radius))
+  plot_annotation(
+    title = paste0("Toutes les Metrics pour l'inventaire :  ", 
+                   basic_config$Type, " / ", 
+                   basic_config$Level, " / ", 
+                   basic_config$Name, " / R = ", 
+                   basic_config$Radius
+                   )
+    )
 
 
 ```
@@ -186,7 +193,13 @@ for (m in all_metrics) {
 }
 
 Wrap <- wrap_plots(all_plots, ncol = 4) + 
-  plot_annotation(title = paste0("Toutes les Metrics pour l'inventaire :  ", basic_config$Type, " / ", basic_config$Level, " / ", basic_config$Name)
+  plot_annotation(
+    title = paste0("Toutes les Metrics pour l'inventaire :  ", 
+                   basic_config$Type, " / ", 
+                   basic_config$Level, " / ", 
+                   basic_config$Name
+                   )
+    )
 
 ```
 
@@ -295,8 +308,8 @@ df_combined <- bind_rows(remove_bota, test_3)
 # save( df_combined,
 #   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.all_ab_rel_familly_tab.RData")
 
-# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.all_ab_rel_familly_tab.RData",
-#   envir = .GlobalEnv)
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.all_ab_rel_familly_tab.RData",
+  envir = .GlobalEnv)
 
 ```
 
@@ -351,11 +364,14 @@ rar <- ggplot(df_plot_rar, aes(x = Source, y = Metric, fill = Clade)) +
   ggtitle("Proportion par Clade")
 
 
+# Plot function
+ab_rel_plot(df_plot_rar)
+
 ```
 
-## Correlation tab
+# Correlation tab
 
-### Family Count / NCI
+## Family Count / NCI
 
 ```{r}
 
@@ -372,10 +388,12 @@ config_1 <- expand.grid(
 )
 
 # Give common Names
-level_names <- give_common_family()
+tax_vec <- give_common_taxa(FALSE,"Family")
 
 # Correlation Tab
-tab_1 <- make_cor_table_bota_genet(config_1, level_names)
+tab_1 <- make_cor_table_bota_genet(config_1, tax_vec)
+
+tab_1$Metric_corr <- tab_1$b.Metric
 
 # Plot
 corr_tab(tab_1)
@@ -384,11 +402,13 @@ corr_tab(tab_1)
 # save( tab_1,
 #   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_1.RData")
 
-# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_1.RData",
-#   envir = .GlobalEnv)
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_1.RData",
+  envir = .GlobalEnv)
 ```
 
-## Presence / Absence
+## Family T+ / T- / MCC
+
+### Presence / Absence
 
 ```{r}
 
@@ -424,8 +444,6 @@ plot_grid(grid)
 
 ```
 
-### Family T+ / T- / MCC
-
 ```{r}
 
 # ==== TEST 2 ====
@@ -436,16 +454,18 @@ config_2 <- expand.grid(
   "b.Metric" = c("Presence"),
   "b.Radius" = 10,
   "b.Year" = c(2012),
-  "Metric_spe" = c("T+","T-","MCC"),
+  "Metric_corr" = c("T+","T-","MCC"),
   "Level" = c("Family"),
   stringsAsFactors = FALSE
 )
 
 # Give common Names
-level_names <- give_common_family()
+tax_vec <- give_common_taxa(FALSE,"Family")
 
 # Make correlation table
-tab_2 <- make_cor_table_bota_genet(config_2, level_names)
+tab_2 <- make_cor_table_bota_genet(config_2, tax_vec)
+
+tab_2$Metric_corr <- tab_2$Metric_spe
 
 # Plot
 corr_tab(tab_2)
@@ -454,12 +474,12 @@ corr_tab(tab_2)
 # save( tab_2,
 #   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_2.RData")
 
-# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_2.RData",
-#   envir = .GlobalEnv)
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_2.RData",
+  envir = .GlobalEnv)
 
 ```
 
-### Species
+## Species T+ / T- / MCC
 
 ```{r}
 # ==== TEST 3 ====
@@ -470,13 +490,13 @@ config_3 <- expand.grid(
   "b.Metric" = c("Presence"),
   "b.Radius" = 10,
   "b.Year" = c(2012),
-  "Metric_spe" = c("T+","T-","MCC"),
-  "Level" = c("Family"),
+  "Metric_corr" = c("T+","T-","MCC"),
+  "Level" = c("Species"),
   stringsAsFactors = FALSE
 )
 
 # Give common Names
-spe_vec <- give_common_species()
+spe_vec <- give_common_taxa(FALSE,"Species")
 
 # Make correlation table
 tab_3 <- make_cor_table_bota_genet(config_3, spe_vec)
@@ -485,16 +505,18 @@ tab_3 <- make_cor_table_bota_genet(config_3, spe_vec)
 corr_tab(tab_3)
 
 # Save data
-# save( tab_3,
-#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_3.RData")
+save( tab_3,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_3.RData")
 
 # load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_3.RData",
 #   envir = .GlobalEnv)
 
 ```
 
+## Species Count / NCI
+
 ```{r}
-# ==== TEST 11 ====
+# ==== TEST 4 ====
 config_4 <- expand.grid(
   "g.Rar" = c(FALSE),
   "g.Marker" = c("GH","ITS","18S"),
@@ -507,12 +529,12 @@ config_4 <- expand.grid(
 )
 
 # Give common Names
-spe_vec <- give_common_species()
+spe_vec <- give_common_taxa(FALSE,"Species")
 
 # Make correlation table
 tab_4 <- make_cor_table_bota_genet(config_4, spe_vec)
 
-tab_4$Metric_spe <- tab_4$b.Metric
+tab_4$Metric_corr <- tab_4$b.Metric
 
 # Print correlation table
 corr_tab(tab_4)
@@ -521,8 +543,8 @@ corr_tab(tab_4)
 # save( tab_4,
 #   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_4.RData")
 
-# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_4.RData",
-#   envir = .GlobalEnv)
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_4.RData",
+  envir = .GlobalEnv)
 ```
 
 ```{r}
@@ -536,16 +558,263 @@ summary(res_aov)
 
 ```
 
+## Gender Count / NCI
+
 ```{r}
 
+
+# ==== TEST 5 ====
+config_5 <- expand.grid(
+  "g.Rar" = c(FALSE),
+  "g.Marker" = c("GH","ITS","18S"),
+  "g.Metric" = c("Reads"),
+  "b.Metric" = c("Count","NCI"),
+  "b.Radius" = 10,
+  "b.Year" = c(2012),
+  "Level" = c("Genus"),
+  stringsAsFactors = FALSE
+)
+
+
+# Give common Names
+common_vec <- give_common_taxa(Rar = FALSE, Level="Genus")
+
+# Make correlation table
+tab_5 <- make_cor_table_bota_genet(config_5, common_vec)
+
+# Add Metric_spe for plot
+tab_5$Metric_corr <- tab_5$b.Metric
+
+# Print correlation table
+corr_tab(tab_5)
+
+# Save data
+# save( tab_5,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_5.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_5.RData",
+#   envir = .GlobalEnv)
+
+```
+
+## Genus T+ / T- / MCC
+
+```{r}
+# ==== TEST 6 ====
+config_6 <- expand.grid(
+  "g.Rar" = c(FALSE),
+  "g.Marker" = c("GH","ITS","18S"),
+  "g.Metric" = c("Presence"),
+  "b.Metric" = c("Presence"),
+  "b.Radius" = 10,
+  "b.Year" = c(2012),
+  "Metric_corr" = c("T+","T-","F+","F-","MCC"),
+  "Level" = c("Genus"),
+  stringsAsFactors = FALSE
+)
+
+# Give common Names
+common_vec <- give_common_taxa(Rar = FALSE, Level="Genus")
+
+# Make correlation table
+tab_6 <- make_cor_table_bota_genet(config_6, common_vec)
+
+# Add Metric_spe for plot
+tab_6$Metric_spe <- tab_6$Metric_corr
+
+# Print correlation table
+corr_tab(tab_6)
+
+# Save data
+# save( tab_6,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_6.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.corr_tab_6.RData",
+#   envir = .GlobalEnv)
+```
+
+## Bind tables
+
+```{r}
+
+# Liste of data frame
 df_list <- list(
   tab_1,
   tab_2,
   tab_3,
-  tab_4
+  tab_4,
+  tab_5,
+  tab_6
 )
-
+# BIND ROWS
 df_corr_tot <- bind_rows(df_list)
 
-corr_tab(df_corr_tot)
+# Save data
+# save( df_corr_tot,
+#  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_corr_tot.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_corr_tot.RData",
+#   envir = .GlobalEnv)
+
+
+```
+
+## Clean tabs
+
+```{r}
+corr_tab(df_corr_tot[df_corr_tot$Level=="Species",])
+corr_tab(df_corr_tot[df_corr_tot$Level=="Family",])
+corr_tab(df_corr_tot[df_corr_tot$Level=="Genus",])
+```
+
+## Rarefied
+
+```{r}
+
+# Levels
+levels <- c("Species", "Genus", "Family")
+# Rar
+rar <- TRUE 
+
+# Configurations
+config_rar <- expand.grid(
+  "g.Rar" = rar,
+  "g.Marker" = c("GH","ITS","18S"),
+  "b.Radius" = 10,
+  "b.Year" = c(2012),
+  "Metric_corr" = c("Count","NCI","T+","T-","MCC"),
+  "Level" = levels,
+  stringsAsFactors = FALSE
+)
+
+# Give common Names for each level
+level_list <- setNames(
+  lapply(levels, function(l) give_common_taxa(Rar = rar, Level = l)),
+  levels
+)
+
+# Make correlation table
+tab_rar <- make_cor_table_bota_genet(config_rar, level_list)
+
+# View
+view(tab_rar)
+
+# Save data
+# save( tab_rar,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData")
+
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
+#   envir = .GlobalEnv)
+
+```
+
+## Clean tabs
+
+```{r}
+
+corr_tab(tab_rar[tab_rar$Level=="Family",])
+corr_tab(tab_rar[tab_rar$Level=="Genus",])
+corr_tab(tab_rar[tab_rar$Level=="Species",])
+```
+
+# Tests Statistiques
+
+## Test : Correlation \~ Metric_corr
+
+```{r}
+# ANOVA Test : Count / NCI
+res_aov <- aov(Correlation ~ Metric_corr, data = tab_rar[tab_rar$Metric_corr %in% c("Count","NCI","MCC"),])
+summary(res_aov)
+
+#              Df Sum Sq Mean Sq F value Pr(>F)  
+# Metric_corr   2   0.14 0.07012    2.35 0.0963 .
+# Residuals   555  16.56 0.02983                 
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 729 observations effacées parce que manquantes
+
+# Moyenne ajustée
+library(emmeans)
+emm <- emmeans(res_aov, pairwise ~ Metric_corr)
+plot(emm)
+
+
+
+```
+
+## Test : Correlation \~ Level
+
+```{r}
+# ANOVA Test : Species / Genus / Family
+res_aov <- aov(Correlation ~ Level, data = tab_rar[tab_rar$Metric_corr %in% c("Count","NCI","MCC"),])
+summary(res_aov)
+
+#              Df Sum Sq Mean Sq F value Pr(>F)  
+# Level         2  0.143 0.07154   2.399 0.0918 .
+# Residuals   555 16.554 0.02983                 
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 729 observations effacées parce que manquantes
+
+# Moyenne ajustée
+library(emmeans)
+emm <- emmeans(res_aov, pairwise ~ Level)
+plot(emm)
+
+# Letters
+library(multcompView)
+tuk <- TukeyHSD(res_aov)
+multcompLetters4(res_aov, tuk)
+
+```
+
+## Correlograme
+
+```{r}
+# Levels
+levels <- c("Species", "Genus", "Family")
+# Rar
+rar <- TRUE 
+
+# Configurations
+config_rad <- expand.grid(
+  "g.Rar" = rar,
+  "g.Marker" = c("GH","ITS","18S"),
+  "b.Radius" = seq(5,50,5),
+  "b.Year" = c(2012),
+  "Metric_corr" = c("Count"),
+  "Level" = levels,
+  stringsAsFactors = FALSE
+)
+
+# Give common Names for each level
+level_list <- setNames(
+  lapply(levels, function(l) give_common_taxa(Rar = rar, Level = l)),
+  levels
+)
+
+# Make correlation table
+tab_rad <- make_cor_table_bota_genet(config_rad, level_list)
+
+# View
+view(tab_rad)
+
+# Save data
+# save( tab_rad,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad.RData")
+
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad.RData",
+  envir = .GlobalEnv)
+
+# Plot
+tab_rad$b.Radius <- as.factor(tab_rad$b.Radius)
+tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
+tab_rad$Level <- as.factor(tab_rad$Level)
+
+p1 <- plot_correlogramme(tab_rad,"GH")
+p2 <- plot_correlogramme(tab_rad,"ITS")
+p3 <- plot_correlogramme(tab_rad,"18S")
+
+(p1 | p2 | p3)
+
 ```

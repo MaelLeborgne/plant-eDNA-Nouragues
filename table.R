@@ -190,69 +190,57 @@ give_common_family <-function(){
   return(names)
 }
 
-# UN-RAREFIED
-give_genet_species <- function(Marker){
+give_genet_taxa <- function(Rar, Level, Marker){
   
-  # Config
-  config <- list(
-    Type = "genet",
-    Rar = FALSE,
-    Marker = Marker
+  # Configuration
+  genet_config <- list(
+    Type   = "genet",
+    Rar    = Rar,
+    Marker = Marker,
+    Level  = Level
   )
-  # Import
-  genet <- import_genet(config)
   
-  # Genet not na species
-  genet <- genet$motus %>%
-    filter(!is.na(.data[["species"]])) # remove NA
+  # Importation
+  genet <- import_genet(genet_config)$motus
   
-  # Species vector
-  spe_vec <- unique(genet[["species"]])
-    
-  return(spe_vec)
-}
-
-# Common species for UN-RAREFIED data
-give_common_species <-function(){
+  # Formatage
+  level <- tolower(Level)
   
-  df_list <- list()
-  
-  # Import Bota
-  config <- list(
-    Year = 2012
-  )
-  df_list[[1]] <- import_bota(config) %>%
-    filter(!is.na(Species)) %>%
-    pull(Species)
-  df_list[[1]] <- data.frame(Clade = unique(df_list[[1]]))
-  
-  # Import genet
-  df_list[[2]] <- give_genet_species("GH")
-  df_list[[2]] <- data.frame(Clade = df_list[[2]])
-  df_list[[3]] <- give_genet_species("ITS")
-  df_list[[3]] <- data.frame(Clade = df_list[[3]])
-  df_list[[4]] <- give_genet_species("18S")
-  df_list[[4]] <- data.frame(Clade = df_list[[4]])
-  
-  # Join result from ab_rel_tabs
-  res2 <- inner_join(df_list[[1]],df_list[[2]],by="Clade")
-  res3 <- inner_join(df_list[[1]],df_list[[3]],by="Clade")
-  res4 <- inner_join(df_list[[1]],df_list[[4]],by="Clade")
-  res_tot <- list(res2,res3,res4) %>% reduce(full_join, by = "Clade")
-  
-  # Take clade names
-  names <- res_tot$Clade
+  # Filtrage 
+  names <- genet %>%
+    filter(!is.na(.data[[level]])) %>%
+    pull(.data[[level]]) %>%
+    unique()
   
   return(names)
 }
 
-make_cor_table_bota_genet <- function(config_tab, level_names){
+give_common_taxa <- function(Rar, Level) {
+  
+  # Bota vector direct
+  bota <- import_bota(list(Year = 2012)) %>%
+    filter(!is.na(.data[[Level]])) %>%
+    pull(.data[[Level]]) %>%
+    unique()
+  
+  markers <- c("GH", "ITS", "18S")
+  
+  # Intersections avec chaque marker
+  common_list <- lapply(markers, function(m) {
+    intersect(bota, give_genet_taxa(Rar, Level, m))
+  })
+  
+  # Union des résultats
+  unique(unlist(common_list))
+}
+
+make_cor_table_bota_genet <- function(config_tab, level_list){
   
   # Add Name by Level
   config_tab <- config_tab %>%
-    rowwise() %>%                        # travailler ligne par ligne
-    mutate(Name = list(level_names)) %>%  # créer une liste de Names
-    unnest(Name)                          # transformer la liste en lignes
+    rowwise() %>%
+    mutate(Name = list(level_list[[Level]])) %>%  # Créer une liste de name
+    unnest(Name)                        # transformer la liste en lignes
   
   # Init column
   config_tab$Correlation <- 0
@@ -266,6 +254,16 @@ make_cor_table_bota_genet <- function(config_tab, level_names){
 }
 
 grid_correlation <- function(row){
+  
+  # Split Metric_corr cases
+  if(row$Metric_corr %in% c("Count","NCI")){
+    row$b.Metric <- row$Metric_corr  # Bota
+    row$g.Metric <- "Reads"      # Génèt
+  }
+  else if(row$Metric_corr %in% c("T+","T-","F+","F-","MCC")){
+    row$b.Metric <- "Presence"   # Bota
+    row$g.Metric <- "Presence"   # Génèt
+  }
   
   # Extract configs
   configs <- extract_configs(row)
@@ -285,21 +283,23 @@ grid_correlation <- function(row){
   BG <- BG %>%
     mutate(tp = Metric.x == 1 & Metric.y == 1, # bota 1 genet 1
            tn = Metric.x == 0 & Metric.y == 0, # bota 0 genet 0
+           fp = Metric.x == 0 & Metric.y == 1, # bota 0 genet 1
+           fn = Metric.x == 0 & Metric.y == 1  # bota 1 genet 0
            )
   # Ratios
   Tp <- sum(BG$tp)/length(BG$tp)
   Tn <- sum(BG$tn)/length(BG$tn)
-  
-  if(!"Metric_spe" %in% names(row)){
-    row$Metric_spe <- row$b.Metric
-  }
+  Fp <- sum(BG$fp)/length(BG$fp)
+  Fn <- sum(BG$fn)/length(BG$fn)
   
   # Select Final metric
-  grid_corr <- switch(row$Metric_spe,
+  grid_corr <- switch(row$Metric_corr,
                       "Count" = cor(B$Metric, G$Metric),
                       "NCI"   = cor(B$Metric, G$Metric),
                       "T+"    = Tp, # True positive
                       "T-"    = Tn, # True negative
+                      "F+"    = Fp, # True positive
+                      "F-"    = Fn, # True negative
                       "MCC"   = mcc(BG$Metric.x, BG$Metric.y),
                       stop(paste0("Unknown Metric :", configs$bota$Metric))
   )

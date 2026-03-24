@@ -230,80 +230,271 @@ patch_turbo_family <- function(factor = 1){
   patchwork::wrap_plots(plots, ncol = 7)
 }
 
-# ===== 2. CORRELATION TABLE =====
-
-corr_tab <- function(config_tab){
-  ggplot(config_tab, aes(x = interaction(Metric_spe,g.Marker),
-                          y = interaction(Level, Name),
-                          fill = Correlation)) +
-    geom_tile(color = "grey80") +
-    geom_text(aes(label = round(Correlation, 2)), size = 3.5) +
-    scale_fill_gradient2(
-      low = "blue",
-      mid = "white",
-      high = "red",
-      midpoint = 0,
-      limits = c(-1, 1),
-      na.value = "white"
+ab_rel_plot <- function(df_plot){
+  
+  # s'assurer que Clade est un facteur dans l'ordre de remplissage désiré
+  # par exemple, ici on garde l'ordre alphabétique pour le fill
+  df_plot_rar <- df_plot_rar %>%
+    mutate(Clade = factor(Clade, levels = sort(unique(Clade))))
+  
+  # calculer les positions exactes pour les labels
+  df_labels <- df_plot_rar %>%
+    group_by(Source) %>%
+    # ordre du facteur Clade pour correspondre à l'empilement ggplot2
+    arrange(Source, desc(Clade)) %>%
+    mutate(ymax = cumsum(Metric),
+           ymin = ymax - Metric,
+           ymid = (ymin + ymax)/2) %>%
+    ungroup() %>%
+    filter(Metric > 2) %>%  # labels seulement pour segments >5%
+    mutate(Label = Clade)
+  
+  # plot
+  ggplot(df_plot_rar, aes(x = Source, y = Metric, fill = Clade)) + 
+    geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
+    
+    geom_label(
+      data = df_labels,
+      aes(y = ymid, label = Label),
+      fill = "black",         # fond noir
+      color = "white",        # texte blanc
+      fontface = "bold.italic",
+      label.size = 0,
+      size = 3
     ) +
-    scale_x_discrete(
-      labels = function(x) gsub("\\.", "\n", x)  # saute ligne entre Marker et Metric
-    ) +
-    theme_minimal() +
+    
+    scale_fill_viridis(discrete = TRUE, option = "C") +
+    scale_y_continuous(labels = scales::percent_format(scale = 1)) +
     labs(
-      x = "Marker / Metric",
-      y = config_tab$Level[1],
-      fill = "Correlation"
+      x = "Source",
+      y = "Proportion (%)",
+      fill = "Clade",
+      title = "Proportion par Clade",
+      subtitle = "Abondances relatives par Source"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "none"
     )
 }
 
 
+
+# ===== 2. CORRELATION TABLE =====
+
+
+corr_tab <- function(config_tab){
+  
+  # ordre des colonnes (Metric)
+  config_tab$Metric_corr <- factor(
+    config_tab$Metric_corr,
+    levels = c("Count","NCI","T+","T-","MCC")
+  )
+  
+  # ordre des lignes (Level)
+  config_tab$Level <- factor(
+    config_tab$Level,
+    levels = c("Family","Genus","Species")
+  )
+  
+  # ordre alphabétique des Name
+  config_tab$Name <- factor(
+    config_tab$Name,
+    levels = rev(sort(unique(config_tab$Name)))
+  )
+  
+  ggplot(config_tab,
+         aes(x = Metric_corr,
+             y = Name,
+             fill = Correlation)) +
+    
+    geom_tile(color = "grey90", linewidth = 0.3) +
+    
+    geom_text(aes(label = sprintf("%.2f", Correlation)),
+              size = 3) +
+    
+    facet_grid(Level ~ g.Marker,
+               scales = "free",
+               space = "free") +
+    
+    scale_fill_gradient2(
+      low = "#3B4CC0",
+      mid = "white",
+      high = "#B40426",
+      midpoint = 0,
+      limits = c(-1, 1),
+      na.value = "white"
+    ) +
+    
+    theme_minimal(base_size = 11) +
+    
+    theme(
+      panel.grid = element_blank(),
+      axis.title = element_blank(),
+      strip.background = element_blank(),
+      strip.placement = "outside",
+      strip.text.x = element_text(size = 10, face = "bold"),
+      strip.text.y = element_text(size = 10, face = "bold")
+    )
+}
+
+# ===== 3. CORRELOGRAME RADIUS =====
+
+plot_correlogramme <- function(tab_rad, Marker){
+  tab_summary <- tab_rad %>%
+    filter(g.Marker == Marker) %>%
+    group_by(b.Radius, Level) %>%
+    summarise(mean_cor = mean(Correlation, na.rm = TRUE),
+              sd_cor = sd(Correlation, na.rm = TRUE),
+              .groups = "drop")
+  
+  ggplot(tab_summary, aes(x = b.Radius, y = mean_cor, color = Level, group = Level)) +
+    geom_line() +
+    geom_point() +
+    geom_errorbar(aes(ymin = mean_cor - sd_cor, ymax = mean_cor + sd_cor), width = 0.1) +
+    labs(x = "Radius (m)", y = "Correlation") +
+    theme_bw() +
+    geom_hline(
+      yintercept = 0,
+      linetype = "dashed"
+    ) + 
+    theme(plot.title = element_text(
+      hjust = 0.5,   # centré
+      size = 14,
+      face = "bold"
+    )) +
+    labs(title = Marker)
+}
+
+
+
+
 # ===== < DEPRECATED > =====
+
+mono_turbo_species <- function(grid, bota, factor = 2) {
+  
+  fine <- plot_grid_interp(grid, factor)
+  
+  # Valeurs limites pour positionner l'échelle
+  x_min <- min(fine$x)
+  x_max <- max(fine$x)
+  y_min <- min(fine$y)
+  y_max <- max(fine$y)
+  
+  n <- 256
+  
+  ggplot(fine, aes(x = x, y = y, fill = krig)) +
+    geom_tile() +
+    scale_fill_gradientn(
+      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1),
+      breaks = scales::breaks_pretty(n = 2)
+    ) +
+    coord_fixed() +
+    theme_minimal()+
+    
+    # supprimer axes et ticks
+    theme(
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "bottom",  # légende sous le plot
+      legend.margin = margin(t = -10),
+      plot.caption = ggplot2::element_text(
+        hjust = 0.5,   # centré
+        size = 9,
+        face = "bold.italic"
+      )
+    ) +
+    
+    # légende horizontale sans titre
+    guides(
+      fill = guide_colorbar(
+        title = NULL, 
+        direction = "horizontal",
+        barwidth = unit(5, "lines"),  # "npc" = 1 fois la largeur du panel
+        barheight = unit(0.5, "lines")  # hauteur de la barre
+      )
+    ) +
+    
+    # ligne d'échelle horizontale (50 unités)
+    geom_segment(
+      aes(
+        x = x_min + 20,
+        xend = x_min + 20 + 50,
+        y = y_max - 0.05 * (y_max - y_min),
+        yend = y_max - 0.05 * (y_max - y_min)
+      ),
+      color = "white",
+      size = 0.5
+    ) +
+    
+    # label "50 m"
+    annotate(
+      "text",
+      x = x_min + 20 + 25,  # au milieu de la ligne
+      y = y_max - 0.08 * (y_max - y_min),
+      label = "50 m",
+      hjust = 0.5,
+      vjust = 1,
+      size = 3,
+      color = "white"
+    )  +
+    geom_point(
+      data = bota,
+      aes(x = Xfield, y = Yfield, size = CircCorr/10),
+      shape = 21,   # cercle avec contour
+      fill = NA,    # pas de remplissage
+      colour = "white",
+      stroke = 0.3,
+      show.legend = FALSE
+    ) +
+    # ajouter nom de la famille centré en bas
+    labs(caption = grid$config$Name)
+}
+
 
 patch_turbo_species <- function(){
   
-  taxid_vec <- unique(gene[["GH"]]$taxid)
-  
-  # filter tax_table
-  df <- tax_table %>%
-    filter(taxid %in% taxid_vec)
-  
-  sp_focus <- df %>% filter(df$is_plant & 
-                              df$not_na_family & 
-                              df$not_na_sp & 
-                              df$valid_sp_name &
-                              df$is_in_bota, 
-                            na.rm = TRUE)
-  
-  sp_vec <- sp_focus$species
+  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
+  bota_sp <- import_bota(list("Year"=2022)) %>%
+    pull(Species) %>%
+    unique()
+  common_sp <- intersect(genet_sp, bota_sp)
   
   plots <- list()
   
-  for(i in seq_along(sp_vec)) {
-    sp <- sp_vec[i]
+  for(i in seq_along(common_sp)) {
+    sp <- common_sp[i]
     
-    # récupérer la grille pour cette famille
-    grid_sp <- genet_grid_read(
-      m = "GH",
-      l = "Species",
-      n = sp,
-      from_csv = TRUE,
-      total = FALSE
+    config <- list(
+      "Type" = "genet",
+      "Rar" = TRUE,
+      "Marker" = "GH",
+      "Level" = "Species",
+      "Name" = sp,
+      "Metric" = "Reads"
     )
+    
+    genet_grid <- grid_read(config)
+    
+    bota_focus <- import_bota(list("Year"=2022)) %>%
+      filter(Species == sp)
     
     print(sp)
     
     # générer la heatmap
-    p <- mono_turbo_species(grid_sp, 
-                            var = "Weight", 
-                            tax_name = sp)
+    p <- mono_turbo_species(genet_grid, bota_focus)
     
     # ajouter indice en haut à gauche
     p <- p +
       annotate(
         "text",
-        x = min(grid_sp$x),
-        y = max(grid_sp$y + 60),
+        x = min(genet_grid$x),
+        y = max(genet_grid$y + 60),
         label = paste0("(", i, ")"),
         fontface = "bold",
         hjust = 0,
@@ -476,89 +667,7 @@ plot_corr_heatmap_families <- function(){
   return(p)
 }
 
-mono_turbo_species <- function(grid = genet_grid_read(l = "Species", n="Dicorynia guianensis"), 
-                               var = "Weight", factor = 2, 
-                               tax_name="Dicorynia guianensis") {
-  
-  fine <- interpolate_grid_2D(grid, var, factor)
-  
-  # Valeurs limites pour positionner l'échelle
-  x_min <- min(fine$x)
-  x_max <- max(fine$x)
-  y_min <- min(fine$y)
-  y_max <- max(fine$y)
-  
-  n <- 256
-  
-  ggplot(fine, aes(x = x, y = y, fill = krig)) +
-    geom_tile() +
-    scale_fill_gradientn(
-      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1),
-      breaks = scales::breaks_pretty(n = 2)
-    ) +
-    coord_fixed() +
-    theme_minimal()+
-    
-    # supprimer axes et ticks
-    theme(
-      axis.title = element_blank(),
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
-      legend.margin = margin(t = -10),
-      plot.caption = ggplot2::element_text(
-        hjust = 0.5,   # centré
-        size = 9,
-        face = "bold.italic"
-      )
-    ) +
-    
-    # légende horizontale sans titre
-    guides(
-      fill = guide_colorbar(
-        title = NULL, 
-        direction = "horizontal",
-        barwidth = unit(5, "lines"),  # "npc" = 1 fois la largeur du panel
-        barheight = unit(0.5, "lines")  # hauteur de la barre
-      )
-    ) +
-    
-    # ligne d'échelle horizontale (50 unités)
-    geom_segment(
-      aes(
-        x = x_min + 20,
-        xend = x_min + 20 + 50,
-        y = y_max - 0.05 * (y_max - y_min),
-        yend = y_max - 0.05 * (y_max - y_min)
-      ),
-      color = "white",
-      size = 0.5
-    ) +
-    
-    # label "50 m"
-    annotate(
-      "text",
-      x = x_min + 20 + 25,  # au milieu de la ligne
-      y = y_max - 0.08 * (y_max - y_min),
-      label = "50 m",
-      hjust = 0.5,
-      vjust = 1,
-      size = 3,
-      color = "white"
-    )  +
-    geom_point(
-      data = bota %>% filter(Species == tax_name),
-      aes(x = Xfield, y = Yfield, size = CircCorr/10),
-      shape = 21,   # cercle avec contour
-      fill = NA,    # pas de remplissage
-      colour = "white",
-      stroke = 0.3,
-      show.legend = FALSE
-    ) +
-    # ajouter nom de la famille centré en bas
-    labs(caption = tax_name)
-}
+
 
 
 
@@ -757,7 +866,7 @@ plot_tab_familly_multi <- function() {
 
 
 
-# ===== 3. CORRELOGRAME RADIUS =====
+
 
 
 
