@@ -55,9 +55,16 @@ import_bota <- function(config){
   }
   
   # Create filtering columns
-  data$not_na_family <- !is.na(data$Family)
-  data$not_na_genus <- !is.na(data$Genus)
+  data$not_na_family  <- !is.na(data$Family)
+  data$not_na_genus   <- !is.na(data$Genus)
   data$not_na_species <- !is.na(data$Species)
+  
+  monocot_families <- c(
+    "Poaceae", "Orchidaceae", "Cyperaceae", "Arecaceae",
+    "Araceae", "Bromeliaceae", "Commelinaceae",
+    "Dioscoreaceae", "Heliconiaceae", "Zingiberaceae"
+  )
+  data$is_monocot     <- data$Family %in% monocot_families
 
   return(data)
 }
@@ -117,6 +124,13 @@ import_genet <- function(config){
   data$motus$not_na_family <- !is.na(data$motus$family)
   data$motus$not_na_genus <- !is.na(data$motus$genus)
   data$motus$not_na_species<- !is.na(data$motus$species)
+  
+  monocot_families <- c(
+    "Poaceae", "Orchidaceae", "Cyperaceae", "Arecaceae",
+    "Araceae", "Bromeliaceae", "Commelinaceae",
+    "Dioscoreaceae", "Heliconiaceae", "Zingiberaceae"
+  )
+  data$motus$is_monocot     <- data$motus$family %in% monocot_families
   
   return(data)
 }

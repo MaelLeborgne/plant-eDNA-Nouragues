@@ -71,7 +71,7 @@ select_tax <- function(Data, Level, Name){
 
 apply_filters <- function(df,
                           # filter_plant = TRUE,
-                          # filter_monocot = TRUE,
+                          filter_monocot = TRUE,
                           filter_na_family = FALSE,
                           filter_na_genus = FALSE,
                           filter_na_sp = FALSE
@@ -82,9 +82,9 @@ apply_filters <- function(df,
   #   df <- df %>% dplyr::filter(is_plant)
   # }
   # 
-  # if(filter_monocot){
-  #   df <- df %>% dplyr::filter(!is_monocot)
-  # }
+  if(filter_monocot){
+    df <- df %>% dplyr::filter(!is_monocot)
+  }
   
   if(filter_na_family){
     df <- df %>% dplyr::filter(not_na_family)

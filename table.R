@@ -58,7 +58,11 @@ summary_ab_rel <- function(config){
   # Config All
   config_all <- config
   config_all$Name <- "All"
-  filters <- filter_select_level(config$Level)
+  
+  # filter list
+  filters <- filter_select_level(config$Level) 
+  filters$filter_monocot <- TRUE
+  
   # Read grid All
   grid_all <- grid_read(config_all, filters)
   total <- sum(grid_all$df$Metric)
@@ -128,6 +132,8 @@ percent_other <- function(df, var_ref, var_per_cols, threshold){
   return(df)
 }
 
+
+
 # percent_out_bota <- function(df, 
 #                              var_ref ="Clade", 
 #                              var_per = "Genet_ab_rel", 
@@ -152,6 +158,20 @@ percent_other <- function(df, var_ref, var_per_cols, threshold){
 #   
 #   return(df)
 # }
+
+# ---- Growth form ----
+
+growth_form_family <- function(fam_vec){
+  plants_nouragues <- import_plants_nouragues()
+  
+  plants_nouragues %>%
+    group_by(family) %>%
+    summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(across(starts_with("stat."), ~ .x / rowSums(across(starts_with("stat."))) * 100)) %>%
+    rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
+    filter(family %in% fam_vec)
+}
+
 
 # ===== 2. CORRELATION TABLE =====
 

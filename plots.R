@@ -266,19 +266,58 @@ ab_rel_plot <- function(df_plot){
     scale_fill_viridis(discrete = TRUE, option = "C") +
     scale_y_continuous(labels = scales::percent_format(scale = 1)) +
     labs(
-      x = "Source",
+      x = "Inventaire",
       y = "Proportion (%)",
       fill = "Clade",
-      title = "Proportion par Clade",
-      subtitle = "Abondances relatives par Source"
+      title = "Abondances relatives par Famille",
+      subtitle = "Nombre d'arbre VS nombre de Reads"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+      legend.position = "none"
+    )+ 
+    geom_hline(yintercept = 25, linetype = "dashed", color="white") +
+    geom_hline(yintercept = 50, linetype = "dashed", color="white") +
+    geom_hline(yintercept = 75, linetype = "dashed", color="white")
+}
+
+growth_form_plot <- function(growth_form){
+  
+  # Linéariser le dataframe
+  growth_form_long <- growth_form %>%
+    pivot_longer(!family, names_to = "growth_form",values_to = "Percent")
+  
+  # ordre alphabétique des family
+  growth_form_long$family <- factor(
+    growth_form_long$family,
+    levels = rev(sort(unique(growth_form_long$family)))
+  )
+  
+  # Plot
+  ggplot(growth_form_long, aes(x = Percent, y = family, fill = growth_form)) + 
+    geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
+    scale_x_continuous(labels = scales::percent_format(scale = 1)) +
+    labs(
+      x = "Proportion (%)",
+      y = "",
+      fill = "Growth Form",
+      title = "Forme de croissance végétale selon la famille",
+      subtitle = "En richesse spécifique sur l'ensemble des nouragues"
     ) +
     theme_minimal(base_size = 14) +
     theme(
       plot.title = element_text(hjust = 0.5, face = "bold"),
       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
       axis.text.x = element_text(angle = 45, hjust = 1),
-      legend.position = "none"
-    )
+      axis.text.y = element_text(hjust = 1, face = "bold.italic")
+    )+ 
+    geom_vline(xintercept = 25, linetype = "dashed") +
+    geom_vline(xintercept = 50, linetype = "dashed") +
+    geom_vline(xintercept = 75, linetype = "dashed")
+  
 }
 
 
