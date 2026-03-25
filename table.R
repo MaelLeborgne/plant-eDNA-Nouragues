@@ -11,6 +11,8 @@ library(dplyr)   # Basic
 
 # ===== 1. FAMILY COMPOSITION BY MARKER =====
 
+# ---- Names and filters ----
+
 give_level_names <- function(config){
   
   if(config$Type == "genet"){
@@ -52,6 +54,8 @@ filter_select_level <- function(Level){
   }
   return(filters)
 }
+
+# ---- Relative abondance ----
 
 summary_ab_rel <- function(config){
   
@@ -175,6 +179,8 @@ growth_form_family <- function(fam_vec){
 
 # ===== 2. CORRELATION TABLE =====
 
+# ---- Give names ----
+
 bota_names <- function(){
   
   # Import Bota
@@ -254,6 +260,8 @@ give_common_taxa <- function(Rar, Level) {
   unique(unlist(common_list))
 }
 
+# ---- Correlation ----
+
 make_cor_table_bota_genet <- function(config_tab, level_list){
   
   # Add Name by Level
@@ -327,6 +335,7 @@ grid_correlation <- function(row){
   return(grid_corr)
 }
 
+# ---- Other ----
 extract_configs <- function(row) {
   
   # Colonnes botaniques : celles qui commencent par b. ou Level / Name

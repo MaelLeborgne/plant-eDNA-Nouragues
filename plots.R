@@ -11,7 +11,7 @@ library(akima)  # pour l'interpolation 2D
 
 # ===== < UPDATED > =====
 
-# ==== BOTA ====
+# ==== 0. BOTA ====
 
 # Return the map of stems
 plot_bota <- function(Level){
@@ -65,6 +65,10 @@ plot_grid <- function(grid, stems = FALSE, bota_focus = NULL) {
   
   return(p)
 }
+
+
+
+# ==== 1. PATCH ====
 
 # Fonction d'interpolation 2D
 interpolate_grid_2D <- function(grid = genet_grid_read(), factor = 3) {
@@ -172,8 +176,6 @@ plot_grid_interp <- function(grid, factor = 2) {
     labs(caption = grid$config$Name)
 }
 
-# ==== PATCH ====
-
 patch_turbo_family <- function(factor = 1){
   
   # Configuration
@@ -228,6 +230,148 @@ patch_turbo_family <- function(factor = 1){
   
   # assembler les plots en patchwork
   patchwork::wrap_plots(plots, ncol = 7)
+}
+
+mono_turbo_species <- function(grid, bota, factor = 2) {
+  
+  fine <- interpolate_grid_2D(grid, factor)
+  
+  # Valeurs limites pour positionner l'échelle
+  x_min <- min(fine$x)
+  x_max <- max(fine$x)
+  y_min <- min(fine$y)
+  y_max <- max(fine$y)
+  
+  n <- 256
+  
+  ggplot(fine, aes(x = x, y = y, fill = krig)) +
+    geom_tile() +
+    scale_fill_gradientn(
+      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1),
+      breaks = scales::breaks_pretty(n = 2)
+    ) +
+    coord_fixed() +
+    theme_minimal()+
+    
+    # supprimer axes et ticks
+    theme(
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "bottom",  # légende sous le plot
+      legend.margin = margin(t = -10),
+      plot.caption = ggplot2::element_text(
+        hjust = 0.5,   # centré
+        size = 9,
+        face = "bold.italic"
+      )
+    ) +
+    
+    # légende horizontale sans titre
+    guides(
+      fill = guide_colorbar(
+        title = NULL, 
+        direction = "horizontal",
+        barwidth = unit(5, "lines"),  # "npc" = 1 fois la largeur du panel
+        barheight = unit(0.5, "lines")  # hauteur de la barre
+      )
+    ) +
+    
+    # ligne d'échelle horizontale (50 unités)
+    geom_segment(
+      aes(
+        x = x_min + 20,
+        xend = x_min + 20 + 50,
+        y = y_max - 0.05 * (y_max - y_min),
+        yend = y_max - 0.05 * (y_max - y_min)
+      ),
+      color = "white",
+      size = 0.5
+    ) +
+    
+    # label "50 m"
+    annotate(
+      "text",
+      x = x_min + 20 + 25,  # au milieu de la ligne
+      y = y_max - 0.08 * (y_max - y_min),
+      label = "50 m",
+      hjust = 0.5,
+      vjust = 1,
+      size = 3,
+      color = "white"
+    )  +
+    geom_point(
+      data = bota,
+      aes(x = Xfield, y = Yfield, size = CircCorr/10),
+      shape = 21,   # cercle avec contour
+      fill = NA,    # pas de remplissage
+      colour = "white",
+      stroke = 0.3,
+      show.legend = FALSE
+    ) +
+    # ajouter nom de la famille centré en bas
+    labs(caption = grid$config$Name)
+}
+
+
+patch_turbo_species <- function(Year){
+  
+  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
+  bota_sp <- import_bota(list("Year" = Year)) %>%
+    pull(Species) %>%
+    unique()
+  common_sp <- intersect(genet_sp, bota_sp)
+  
+  plots <- list()
+  
+  for(i in seq_along(common_sp)) {
+    sp <- common_sp[i]
+    
+    config <- list(
+      "Type" = "genet",
+      "Rar" = TRUE,
+      "Marker" = "GH",
+      "Level" = "Species",
+      "Name" = sp,
+      "Metric" = "Reads"
+    )
+    
+    genet_grid <- grid_read(config)
+    
+    bota_focus <- import_bota(list("Year" = Year)) %>%
+      filter(Species == sp)
+    
+    print(sp)
+    
+    # générer la heatmap
+    p <- mono_turbo_species(genet_grid, bota_focus)
+    
+    # ajouter indice en haut à gauche
+    p <- p +
+      annotate(
+        "text",
+        x = min(genet_grid$df$x),
+        y = max(genet_grid$df$y + 60),
+        label = paste0("(", i, ")"),
+        fontface = "bold",
+        hjust = 0,
+        vjust = 1,
+        size = 5,
+        color = "black"
+      )
+    
+    plots[[i]] <- p
+  }
+  
+  # assembler les plots en patchwork
+  wrap_plots(plots, ncol = 7) +
+    plot_annotation(
+      title = Year,
+      theme = theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+      )
+    )
 }
 
 ab_rel_plot <- function(df_plot){
@@ -325,7 +469,7 @@ growth_form_plot <- function(growth_form){
 # ===== 2. CORRELATION TABLE =====
 
 
-corr_tab <- function(config_tab){
+corr_tab_plot <- function(config_tab){
   
   # ordre des colonnes (Metric)
   config_tab$Metric_corr <- factor(
@@ -380,9 +524,122 @@ corr_tab <- function(config_tab){
     )
 }
 
+morpho_corr_matrix <- function(config_tab){
+  
+  # Import Morpho
+  morpho <- import_plants_morpho() %>%
+    mutate(Species = gsub("_", " ", Species))
+  
+  # Read Model
+  model <- tab_rar %>%
+    filter(
+      Level == "Species",
+      g.Marker == "GH",
+      Metric_corr == "Count"
+    ) %>%
+    select(Name, Correlation) %>%
+    rename(Species = Name, Model = Correlation)
+  
+  # Inner Join
+  model_morpho_df <- inner_join(model, morpho, by = "Species") %>%
+    select(
+      -Species, -Genus, -Family, -order, -subclass2, -subclass1
+    )
+  
+  # Correlation matrix
+  corr_mat <- cor(model_morpho_df, use = "pairwise.complete.obs", method = "pearson")
+  
+  corr_df <- as.data.frame(as.table(corr_mat))
+  colnames(corr_df) <- c("Var1", "Var2", "Correlation")
+  
+  # Heatmap
+  ggplot(corr_df,aes(Var1, Var2, fill = Correlation)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = round(Correlation, 2)), size = 3) +
+    scale_fill_gradient2(
+      low = "blue",
+      mid = "white",
+      high = "red",
+      midpoint = 0,
+      limits = c(-1,1),
+      breaks = c(-1,-0.5,0,0.5,1)
+    ) +
+    coord_equal() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title = element_blank()
+    ) +
+    labs(
+      title = "Corrélation spatiale entre familles (heatmaps GH)",
+      fill = "Pearson r"
+    )
+  
+}
+
+morpho_corr_bar <- function(){
+  
+  # Import Morpho
+  morpho <- import_plants_morpho() %>%
+    mutate(Species = gsub("_", " ", Species))
+  
+  # Read Model
+  model <- tab_rar %>%
+    filter(
+      Level == "Species",
+      g.Marker == "GH",
+      Metric_corr == "Count"
+    ) %>%
+    select(Name, Correlation) %>%
+    rename(Species = Name, Model = Correlation)
+  
+  # Inner Join
+  model_morpho_df <- inner_join(model, morpho, by = "Species") %>%
+    select(
+      -Species, -Genus, -Family, -order, -subclass2, -subclass1
+    )
+  
+  # Prepare data
+  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")["Model", ]
+  
+  corr_df <- data.frame(
+    Variable = names(corr_vec),
+    Correlation = corr_vec
+  ) %>%
+    filter(Variable != "Model") %>%
+    arrange(Correlation)
+  
+  # Plot
+  ggplot(corr_df, aes(x = reorder(Variable, Correlation), y = Correlation, fill = Correlation)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    theme_minimal(base_size = 14) +
+    labs(
+      title = "Corrélation des traits morphologique avec le modèle",
+      subtitle = "au niveau specifique pour le marker GH",
+      x = "",
+      y = "Pearson r",
+      fill = "r"
+    ) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+      axis.text.y = element_text(hjust = 1, face = "bold")
+    )
+  
+}
+
 # ===== 3. CORRELOGRAME RADIUS =====
 
 plot_correlogramme <- function(tab_rad, Marker){
+  # As Factors
+  tab_rad$b.Radius <- as.factor(tab_rad$b.Radius)
+  tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
+  tab_rad$Level <- as.factor(tab_rad$Level)
+  
+  # Mean and Standars deviation
   tab_summary <- tab_rad %>%
     filter(g.Marker == Marker) %>%
     group_by(b.Radius, Level) %>%
@@ -390,6 +647,7 @@ plot_correlogramme <- function(tab_rad, Marker){
               sd_cor = sd(Correlation, na.rm = TRUE),
               .groups = "drop")
   
+  # Plot
   ggplot(tab_summary, aes(x = b.Radius, y = mean_cor, color = Level, group = Level)) +
     geom_line() +
     geom_point() +
@@ -413,142 +671,7 @@ plot_correlogramme <- function(tab_rad, Marker){
 
 # ===== < DEPRECATED > =====
 
-mono_turbo_species <- function(grid, bota, factor = 2) {
-  
-  fine <- plot_grid_interp(grid, factor)
-  
-  # Valeurs limites pour positionner l'échelle
-  x_min <- min(fine$x)
-  x_max <- max(fine$x)
-  y_min <- min(fine$y)
-  y_max <- max(fine$y)
-  
-  n <- 256
-  
-  ggplot(fine, aes(x = x, y = y, fill = krig)) +
-    geom_tile() +
-    scale_fill_gradientn(
-      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1),
-      breaks = scales::breaks_pretty(n = 2)
-    ) +
-    coord_fixed() +
-    theme_minimal()+
-    
-    # supprimer axes et ticks
-    theme(
-      axis.title = element_blank(),
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
-      legend.margin = margin(t = -10),
-      plot.caption = ggplot2::element_text(
-        hjust = 0.5,   # centré
-        size = 9,
-        face = "bold.italic"
-      )
-    ) +
-    
-    # légende horizontale sans titre
-    guides(
-      fill = guide_colorbar(
-        title = NULL, 
-        direction = "horizontal",
-        barwidth = unit(5, "lines"),  # "npc" = 1 fois la largeur du panel
-        barheight = unit(0.5, "lines")  # hauteur de la barre
-      )
-    ) +
-    
-    # ligne d'échelle horizontale (50 unités)
-    geom_segment(
-      aes(
-        x = x_min + 20,
-        xend = x_min + 20 + 50,
-        y = y_max - 0.05 * (y_max - y_min),
-        yend = y_max - 0.05 * (y_max - y_min)
-      ),
-      color = "white",
-      size = 0.5
-    ) +
-    
-    # label "50 m"
-    annotate(
-      "text",
-      x = x_min + 20 + 25,  # au milieu de la ligne
-      y = y_max - 0.08 * (y_max - y_min),
-      label = "50 m",
-      hjust = 0.5,
-      vjust = 1,
-      size = 3,
-      color = "white"
-    )  +
-    geom_point(
-      data = bota,
-      aes(x = Xfield, y = Yfield, size = CircCorr/10),
-      shape = 21,   # cercle avec contour
-      fill = NA,    # pas de remplissage
-      colour = "white",
-      stroke = 0.3,
-      show.legend = FALSE
-    ) +
-    # ajouter nom de la famille centré en bas
-    labs(caption = grid$config$Name)
-}
 
-
-patch_turbo_species <- function(){
-  
-  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
-  bota_sp <- import_bota(list("Year"=2022)) %>%
-    pull(Species) %>%
-    unique()
-  common_sp <- intersect(genet_sp, bota_sp)
-  
-  plots <- list()
-  
-  for(i in seq_along(common_sp)) {
-    sp <- common_sp[i]
-    
-    config <- list(
-      "Type" = "genet",
-      "Rar" = TRUE,
-      "Marker" = "GH",
-      "Level" = "Species",
-      "Name" = sp,
-      "Metric" = "Reads"
-    )
-    
-    genet_grid <- grid_read(config)
-    
-    bota_focus <- import_bota(list("Year"=2022)) %>%
-      filter(Species == sp)
-    
-    print(sp)
-    
-    # générer la heatmap
-    p <- mono_turbo_species(genet_grid, bota_focus)
-    
-    # ajouter indice en haut à gauche
-    p <- p +
-      annotate(
-        "text",
-        x = min(genet_grid$x),
-        y = max(genet_grid$y + 60),
-        label = paste0("(", i, ")"),
-        fontface = "bold",
-        hjust = 0,
-        vjust = 1,
-        size = 5,
-        color = "black"
-      )
-    
-    plots[[i]] <- p
-  }
-  
-  # assembler les plots en patchwork
-  patchwork::wrap_plots(plots, ncol = 12)
-  
-}
 
 multi_filter_flow <- function(){
   

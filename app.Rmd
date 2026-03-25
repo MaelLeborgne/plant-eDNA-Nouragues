@@ -28,11 +28,10 @@ source("table.R")
 source("plots.R")
 ```
 
-# Tests
 
-## Basic
+# 0. Basic
 
-### Grid Bota
+## Grid Bota
 
 ```{r}
 grid_config <- list(
@@ -64,7 +63,7 @@ grid <- grid_read(grid_config)
 plot_grid_interp(grid)
 ```
 
-### Grid Genet
+## Grid Genet
 
 ```{r}
 grid_config <- list(
@@ -82,7 +81,7 @@ grid <- grid_read(grid_config)
 plot_grid(grid)
 ```
 
-### Grid Genet (test name not in genet)
+## Grid Genet (test name not in genet)
 
 ```{r}
 grid_config <- list(
@@ -98,7 +97,7 @@ grid <- grid_read(grid_config)
 plot_grid(grid)
 ```
 
-### Grid Bota (all Metric)
+## Grid Bota (all Metric)
 
 ```{r}
 # Config
@@ -146,7 +145,7 @@ Wrap <- wrap_plots(all_plots, ncol = 3) +
 
 ```
 
-### Grid Genet (all Metric)
+## Grid Genet (all Metric)
 
 ```{r}
 
@@ -202,14 +201,58 @@ Wrap <- wrap_plots(all_plots, ncol = 4) +
 
 ```
 
-## Patchs
+## Presence / Absence
+
+```{r}
+
+# Bota
+config <- list(
+  Level = "Family",
+  Name = "Fabaceae",
+  Type = "bota",
+  Year = "2012",
+  Radius = 10,
+  Metric = "Presence")
+
+bota <- import_bota(config)
+
+grid <- grid_read(config)
+
+plot_grid(grid)
+
+# Genet
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Species",
+  Name = "Salvia textitlana",
+  Metric = "Presence")
+
+genet_gh <- import_genet(config)
+
+grid <- grid_read(config)
+
+plot_grid(grid)
+```
+
+# 1. Patch
+## Family
 
 ```{r}
 
 patch_turbo_family()
 
+```
+## Species
+
+```{r}
+
+p1 <- patch_turbo_species(2012)
+p2 <- patch_turbo_species(2022)
 
 ```
+
 
 ## Give names
 
@@ -232,9 +275,11 @@ config <- list(
 give_level_names(config)
 ```
 
-## Tables d'Abondance realtives
+# 2. Tables d'Abondance realtives
 
-### Family : Nombre d'arbres / Reads
+## Family
+
+### A. Create
 
 ```{r}
 
@@ -281,7 +326,7 @@ view(df_combined)
 ```
 
 
-### Replace \< 2% families
+### B. Replace \< 2% families
 
 ```{r}
 
@@ -306,6 +351,12 @@ df_list <- lapply(seq_along(source_indices), function(i) {
   
   return(df_temp)
 })
+
+```
+
+### C. Plots Ab_rel et Growth_form
+
+```{r}
 
 # Sélectionner les éléments de df_list à combiner
 df_plot_clust <- bind_rows(df_list[c(1, 3, 5, 7)])
@@ -342,48 +393,16 @@ p2 <- growth_form_plot(growth_form)
 # Patchwork
 (p1 | p2)
 
-
 ```
 
 
-## Presence / Absence
 
-```{r}
 
-# Bota
-config <- list(
-  Level = "Family",
-  Name = "Fabaceae",
-  Type = "bota",
-  Year = "2012",
-  Radius = 10,
-  Metric = "Presence")
+# 3. Correlation tab
 
-bota <- import_bota(config)
+## A. Create
 
-grid <- grid_read(config)
-
-plot_grid(grid)
-
-# Genet
-config <- list(
-  Type = "genet",
-  Rar = FALSE,
-  Marker = "GH",
-  Level = "Species",
-  Name = "Salvia textitlana",
-  Metric = "Presence")
-
-genet_gh <- import_genet(config)
-
-grid <- grid_read(config)
-
-plot_grid(grid)
-```
-
-# Correlation tab
-
-## Tab Un-rarefied
+### Un-rarefied
 
 ```{r}
 # Levels
@@ -427,15 +446,7 @@ view(tab_unrar)
 ```
 
 
-## Clean tabs
-
-```{r}
-corr_tab(df_corr_tot[df_corr_tot$Level=="Species",])
-corr_tab(df_corr_tot[df_corr_tot$Level=="Family",])
-corr_tab(df_corr_tot[df_corr_tot$Level=="Genus",])
-```
-
-## Rarefied
+### Rarefied
 
 ```{r}
 
@@ -476,18 +487,25 @@ view(tab_rar)
 
 ```
 
-## Clean tabs
+## B. Plot tabs
 
 ```{r}
 
-corr_tab(tab_rar[tab_rar$Level=="Family",])
-corr_tab(tab_rar[tab_rar$Level=="Genus",])
-corr_tab(tab_rar[tab_rar$Level=="Species",])
+# Unrar
+corr_tab_plot(df_corr_tot[df_corr_tot$Level=="Species",])
+corr_tab_plot(df_corr_tot[df_corr_tot$Level=="Family",])
+corr_tab_plot(df_corr_tot[df_corr_tot$Level=="Genus",])
+
+# Rar
+corr_tab_plot(tab_rar[tab_rar$Level=="Family",])
+corr_tab_plot(tab_rar[tab_rar$Level=="Genus",])
+corr_tab_plot(tab_rar[tab_rar$Level=="Species",])
+
 ```
 
-# Tests Statistiques
+## C. Tests Statistiques
 
-## Test : Correlation \~ Metric_corr
+### Test : Correlation \~ Metric_corr
 
 ```{r}
 # ANOVA Test : Count / NCI
@@ -510,7 +528,7 @@ plot(emm)
 
 ```
 
-## Test : Correlation \~ Level
+### Test : Correlation \~ Level
 
 ```{r}
 # ANOVA Test : Species / Genus / Family
@@ -536,7 +554,23 @@ multcompLetters4(res_aov, tuk)
 
 ```
 
-## Correlograme
+## D. Morpho
+
+```{r}
+
+
+# Plot correlation bar
+morpho_corr_bar()
+
+
+# Plot correlation matrix
+morpho_corr_matrix()
+
+
+```
+
+
+# 4. Correlograme
 
 ```{r}
 # Levels
@@ -548,12 +582,15 @@ rar <- TRUE
 config_rad <- expand.grid(
   "g.Rar" = rar,
   "g.Marker" = c("GH","ITS","18S"),
+  "g.Metric" = "OTU",
   "b.Radius" = seq(5,50,5),
   "b.Year" = c(2012),
+  "b.Metric" = "OTU",
   "Metric_corr" = c("Count"),
   "Level" = levels,
   stringsAsFactors = FALSE
-)
+) %>% mutate(g.Metric = ifelse(Level == "Species", "H1", g.Metric))
+
 
 # Give common Names for each level
 level_list <- setNames(
@@ -571,14 +608,10 @@ view(tab_rad)
 # save( tab_rad,
 #   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad.RData")
 
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad.RData",
-  envir = .GlobalEnv)
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad.RData",
+#   envir = .GlobalEnv)
 
-# Plot
-tab_rad$b.Radius <- as.factor(tab_rad$b.Radius)
-tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
-tab_rad$Level <- as.factor(tab_rad$Level)
-
+# Plots
 p1 <- plot_correlogramme(tab_rad,"GH")
 p2 <- plot_correlogramme(tab_rad,"ITS")
 p3 <- plot_correlogramme(tab_rad,"18S")
