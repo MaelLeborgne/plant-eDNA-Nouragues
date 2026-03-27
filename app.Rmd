@@ -287,9 +287,9 @@ give_level_names(config)
 test_1 <- expand.grid(
   Type = "genet",
   Rar = c(FALSE,TRUE),
-  Marker = c("GH","ITS","18S"),
+  Marker = "18S",#c("GH","ITS","18S"),
   Level = c("Family"),
-  Metric = "Reads",
+  Metric = "OTU",
   stringsAsFactors = FALSE
 )
 
@@ -301,7 +301,7 @@ test_3 <- expand.grid(
   Type = "bota",
   Year = "2012",
   Level = "Family",
-  Metric = c("Count","Basal_Area_m2"),
+  Metric = c("OTU","Count","Basal_Area_m2"),
   Radius = "pixel",
   stringsAsFactors = FALSE
 )
@@ -311,15 +311,20 @@ test_3 <- test_ab_rel_sum(test_3)
 
 
 # ==== Combine ====
-df_combined <- bind_rows(test_1, test_3)
+df_ab_rel_Richness <- bind_rows(test_1, test_3)
 
 # View
-view(df_combined)
+view(df_ab_rel_Richness)
 
 # Save data
-# save( df_combined,
-#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_count_family.RData")
+# save( df_ab_rel_Richness,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData")
 
+# New data : OTU
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
+#   envir = .GlobalEnv)
+
+# Previous data : reads and count
 # load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_count_family.RData",
 #   envir = .GlobalEnv)
 
@@ -330,7 +335,7 @@ view(df_combined)
 
 ```{r}
 
-df_reduced <- df_combined
+df_reduced <- df_ab_rel_Richness
 
 df_reduced$Result <- lapply(seq_len(nrow(df_reduced)), function(i) {
     df_reduced$Result[[i]] %>% percent_other("Clade", "Metric", 2)
@@ -359,43 +364,34 @@ df_list <- lapply(seq_along(source_indices), function(i) {
 ```{r}
 
 # Sélectionner les éléments de df_list à combiner
-df_plot_clust <- bind_rows(df_list[c(1, 3, 5, 7)])
+df_plot_rar <- bind_rows(df_list[c(2, 4, 6, 7)]) %>%
+  mutate(in_bota = Clade %in% df_list[7][[1]]$Clade)
 
-# Créer le graphique avec ggplot2
-clust <- ggplot(df_plot_clust, aes(x = Source, y = Metric, fill = Clade)) + 
-  geom_bar(stat = "identity", position = "stack") +
-  labs(x = "Bota", y = "Proportion (%)", fill = "Clade") +
-  scale_y_continuous(labels = scales::percent_format(scale = 1)) + # Affiche en pourcentage
-  theme_minimal() +
-  ggtitle("Proportion par Clade")
+# All family
+all_fam <- df_plot_rar %>%
+  dplyr::filter(!Clade %in% c("Indet.","<2%")) %>%
+  pull(Clade) %>%
+  unique()
 
-
-
-# Sélectionner les éléments de df_list à combiner
-df_plot_rar <- bind_rows(df_list[c(2, 4, 6, 7)])
-
-# Créer le graphique avec ggplot2
-rar <- ggplot(df_plot_rar, aes(x = Source, y = Metric, fill = Clade)) + 
-  geom_bar(stat = "identity", position = "stack") +
-  labs(x = "Bota", y = "Proportion (%)", fill = "Clade") +
-  scale_y_continuous(labels = scales::percent_format(scale = 1)) + # Affiche en pourcentage
-  theme_minimal() +
-  ggtitle("Proportion par Clade")
-
+# Test in bota
+all_fam_df <- data.frame(
+  family = all_fam,
+  Clade = all_fam,
+  in_bota = all_fam %in% df_list[7][[1]]$Clade
+)
 
 # Plot abondance relative
 p1 <- ab_rel_plot(df_plot_rar)
 
-# Growth form
-growth_form <- growth_form_family(df_list[7][[1]]$Clade)
+# Build growth_form Tab
+growth_form <- growth_form_family(all_fam_df)
+
+# Plot growth_form
 p2 <- growth_form_plot(growth_form)
 
 # Patchwork
 (p1 | p2)
-
 ```
-
-
 
 
 # 3. Correlation tab
@@ -501,6 +497,41 @@ corr_tab_plot(tab_rar[tab_rar$Level=="Family",])
 corr_tab_plot(tab_rar[tab_rar$Level=="Genus",])
 corr_tab_plot(tab_rar[tab_rar$Level=="Species",])
 
+# Rar Clean Tab
+tab_rar %>%
+    filter(
+      Level == "Family",
+      g.Marker %in% c("GH","ITS","18S"),
+      Metric_corr %in% c("Count","NCI","MCC")
+    ) %>%
+  corr_tab_plot()
+
+tab_rar %>%
+    filter(
+      Level == "Genus",
+      g.Marker %in% c("GH","ITS"),
+      Metric_corr %in% c("Count","NCI","MCC")
+    ) %>%
+  corr_tab_plot()
+
+tab_rar %>%
+    filter(
+      Level == "Species",
+      g.Marker %in% c("GH","ITS"),
+      Metric_corr %in% c("Count","NCI","MCC")
+    ) %>%
+  corr_tab_plot()
+
+# Rar Clean BOXPLOT
+tab_rar %>%
+    filter(
+      Level %in% c("Family","Genus","Species"),
+      g.Marker %in% c("GH","ITS"),
+      Metric_corr %in% c("Count","NCI","MCC")
+    ) %>%
+  corr_boxplot()
+
+
 ```
 
 ## C. Tests Statistiques
@@ -524,7 +555,12 @@ library(emmeans)
 emm <- emmeans(res_aov, pairwise ~ Metric_corr)
 plot(emm)
 
+# Letters
+library(multcompView)
+tuk <- TukeyHSD(res_aov)
+multcompLetters4(res_aov, tuk)
 
+# a a a
 
 ```
 
@@ -551,6 +587,8 @@ plot(emm)
 library(multcompView)
 tuk <- TukeyHSD(res_aov)
 multcompLetters4(res_aov, tuk)
+
+# a a a
 
 ```
 
@@ -582,14 +620,14 @@ rar <- TRUE
 config_rad <- expand.grid(
   "g.Rar" = rar,
   "g.Marker" = c("GH","ITS","18S"),
-  "g.Metric" = "OTU",
+  "g.Metric" = "H1",
   "b.Radius" = seq(5,50,5),
   "b.Year" = c(2012),
   "b.Metric" = "OTU",
-  "Metric_corr" = c("Count"),
+  "Metric_corr" = "OTU",
   "Level" = levels,
   stringsAsFactors = FALSE
-) %>% mutate(g.Metric = ifelse(Level == "Species", "H1", g.Metric))
+)
 
 
 # Give common Names for each level
@@ -606,9 +644,9 @@ view(tab_rad)
 
 # Save data
 # save( tab_rad,
-#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad.RData")
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_OTU_H1.RData")
 
-# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad.RData",
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_OTU_H1.RData",
 #   envir = .GlobalEnv)
 
 # Plots

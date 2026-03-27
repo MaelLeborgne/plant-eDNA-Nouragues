@@ -8,6 +8,9 @@ library(ggplot2) # Plot
 library(viridis) # turbo
 library(patchwork)
 library(akima)  # pour l'interpolation 2D
+library(emmeans)
+library(multcomp)
+library(ggtext)
 
 # ===== < UPDATED > =====
 
@@ -376,74 +379,121 @@ patch_turbo_species <- function(Year){
 
 ab_rel_plot <- function(df_plot){
   
-  # s'assurer que Clade est un facteur dans l'ordre de remplissage désiré
-  # par exemple, ici on garde l'ordre alphabétique pour le fill
-  df_plot_rar <- df_plot_rar %>%
+  # Mettre les clades dans l'ordre alphabétique
+  df_plot <- df_plot %>%
     mutate(Clade = factor(Clade, levels = sort(unique(Clade))))
   
-  # calculer les positions exactes pour les labels
-  df_labels <- df_plot_rar %>%
-    group_by(Source) %>%
-    # ordre du facteur Clade pour correspondre à l'empilement ggplot2
-    arrange(Source, desc(Clade)) %>%
-    mutate(ymax = cumsum(Metric),
-           ymin = ymax - Metric,
-           ymid = (ymin + ymax)/2) %>%
-    ungroup() %>%
-    filter(Metric > 2) %>%  # labels seulement pour segments >5%
-    mutate(Label = Clade)
+  # Choisir l'ordre des Source
+  df_plot <- df_plot %>%
+    mutate(Source = factor(Source, levels = c("Bota","GH","ITS","18S")))
   
-  # plot
-  ggplot(df_plot_rar, aes(x = Source, y = Metric, fill = Clade)) + 
+  # calculer les positions exactes pour les labels
+  df_labels <- df_plot %>%
+    group_by(Source) %>%
+    arrange(Source, desc(Clade)) %>%
+    mutate(
+      ymax = cumsum(Metric),
+      ymin = ymax - Metric,
+      ymid = (ymin + ymax)/2
+    ) %>%
+    ungroup() %>%
+    mutate(
+      Label = ifelse(
+        Clade %in% c("<2%","Indet."),      # segments <2% ou Indet.
+        paste0("<span style='color:black;'>", Clade, "</span>"),                                 # pas de label
+        ifelse(
+          in_bota == TRUE,
+          paste0("<span style='color:forestgreen;'>", Clade, "</span>"),
+          paste0("<span style='color:red;'>", Clade, "</span>")   # couleur noire
+        )
+      )
+    )
+  # Labels vector
+  labels_vec <- setNames(df_labels$Label, df_labels$Clade)
+  
+  # # x labels colors
+  labels_source <- c(
+    "Bota" = "<span style='color:forestgreen;'> Bota </span>",
+    "GH" = "<span style='color:red;'> GH </span>",
+    "ITS" = "<span style='color:red;'> ITS </span>",
+    "18S" = "<span style='color:red;'> 18S </span>"
+  )
+  
+  # Plot
+  ggplot(df_plot, aes(x = Source, y = Metric, fill = Clade)) + 
     geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
     
-    geom_label(
+    ggtext::geom_richtext(
       data = df_labels,
       aes(y = ymid, label = Label),
-      fill = "black",         # fond noir
-      color = "white",        # texte blanc
-      fontface = "bold.italic",
+      fill = "white",
       label.size = 0,
+      fontface = "bold.italic",
       size = 3
     ) +
     
     scale_fill_viridis(discrete = TRUE, option = "C") +
+    scale_x_discrete(labels = labels_source) +
     scale_y_continuous(labels = scales::percent_format(scale = 1)) +
     labs(
-      x = "Inventaire",
+      x = "Inventaire / Marqueur",
       y = "Proportion (%)",
       fill = "Clade",
       title = "Abondances relatives par Famille",
-      subtitle = "Nombre d'arbre VS nombre de Reads"
+      subtitle = "En richesse botanique et diversité d'OTU"
     ) +
     theme_minimal(base_size = 14) +
     theme(
       plot.title = element_text(hjust = 0.5, face = "bold"),
       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
-      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+      axis.text.x.bottom = ggtext::element_markdown(angle = 45, hjust = 1, face = "bold"),
       legend.position = "none"
     )+ 
-    geom_hline(yintercept = 25, linetype = "dashed", color="white") +
-    geom_hline(yintercept = 50, linetype = "dashed", color="white") +
-    geom_hline(yintercept = 75, linetype = "dashed", color="white")
+    geom_hline(yintercept = c(25,50,75), linetype = "dashed", color="white")
 }
 
 growth_form_plot <- function(growth_form){
   
   # Linéariser le dataframe
   growth_form_long <- growth_form %>%
-    pivot_longer(!family, names_to = "growth_form",values_to = "Percent")
+    pivot_longer(
+      cols = -c(family, Clade, in_bota),
+      names_to = "growth_form",
+      values_to = "Percent"
+    )
   
-  # ordre alphabétique des family
+  # ordre des family selon in_bota
+  family_order <- growth_form_long %>%
+    distinct(family, in_bota) %>%
+    arrange(in_bota, desc(family)) %>%   # TRUE en premier, puis ordre alphabétique
+    pull(family)
+  # et alphabétique
   growth_form_long$family <- factor(
     growth_form_long$family,
-    levels = rev(sort(unique(growth_form_long$family)))
+    levels = family_order
   )
+  
+  # créer labels avec couleur conditionelles
+  label_df <- growth_form_long %>%
+    distinct(family, in_bota) %>%
+    mutate(
+      family = as.character(family),
+      label = ifelse(
+        in_bota == TRUE,
+        paste0("<span style='color:forestgreen;'>", family, "</span>"),
+        paste0("<span style='color:red;'>", family, "</span>")
+      )
+    )
+  labels_vec <- setNames(label_df$label, label_df$family)
   
   # Plot
   ggplot(growth_form_long, aes(x = Percent, y = family, fill = growth_form)) + 
-    geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
+    geom_bar(stat = "identity", position = "stack", color = "black") +
     scale_x_continuous(labels = scales::percent_format(scale = 1)) +
+    scale_y_discrete(
+      labels = labels_vec,
+      guide = guide_axis(n.dodge = 1)
+    ) +
     labs(
       x = "Proportion (%)",
       y = "",
@@ -456,12 +506,12 @@ growth_form_plot <- function(growth_form){
       plot.title = element_text(hjust = 0.5, face = "bold"),
       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
       axis.text.x = element_text(angle = 45, hjust = 1),
-      axis.text.y = element_text(hjust = 1, face = "bold.italic")
+      axis.text.y.left = ggtext::element_markdown(
+        hjust = 1,
+        face = "bold.italic"
+      )
     )+ 
-    geom_vline(xintercept = 25, linetype = "dashed") +
-    geom_vline(xintercept = 50, linetype = "dashed") +
-    geom_vline(xintercept = 75, linetype = "dashed")
-  
+    geom_vline(xintercept = c(25,50,75), linetype = "dashed")
 }
 
 
@@ -471,25 +521,31 @@ growth_form_plot <- function(growth_form){
 
 corr_tab_plot <- function(config_tab){
   
-  # ordre des colonnes (Metric)
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("Count","NCI","T+","T-","MCC")
+    levels = c("T+","T-","MCC","Count","NCI")
   )
   
-  # ordre des lignes (Level)
   config_tab$Level <- factor(
     config_tab$Level,
     levels = c("Family","Genus","Species")
   )
   
-  # ordre alphabétique des Name
   config_tab$Name <- factor(
     config_tab$Name,
     levels = rev(sort(unique(config_tab$Name)))
   )
   
-  ggplot(config_tab,
+  config_tab$g.Marker <- factor(
+    config_tab$g.Marker,
+    levels = c("GH","ITS","18S")
+  )
+  
+  # clean data
+  config_tab_clean <- droplevels(na.omit(config_tab))
+  
+  # Plot
+  ggplot(config_tab_clean,
          aes(x = Metric_corr,
              y = Name,
              fill = Correlation)) +
@@ -501,7 +557,11 @@ corr_tab_plot <- function(config_tab){
     
     facet_grid(Level ~ g.Marker,
                scales = "free",
-               space = "free") +
+               space = "free",
+               switch = "y",
+               drop = TRUE) +
+    
+    scale_x_discrete(position = "top") +
     
     scale_fill_gradient2(
       low = "#3B4CC0",
@@ -517,10 +577,118 @@ corr_tab_plot <- function(config_tab){
     theme(
       panel.grid = element_blank(),
       axis.title = element_blank(),
+      
       strip.background = element_blank(),
       strip.placement = "outside",
       strip.text.x = element_text(size = 10, face = "bold"),
       strip.text.y = element_text(size = 10, face = "bold")
+    )
+}
+
+corr_boxplot <- function(config_tab){
+  
+  # ordre des colonnes (Metric)
+  config_tab$Metric_corr <- factor(
+    config_tab$Metric_corr,
+    levels = c("Count","NCI","T+","T-","MCC")
+  )
+  
+  # ordre des lignes (Level)
+  config_tab$Level <- factor(
+    config_tab$Level,
+    levels = c("Family","Genus","Species")
+  )
+  
+  # clean data
+  config_tab_clean <- droplevels(na.omit(config_tab))
+  
+  # Test stat global
+  res_aov3 <- aov(Correlation ~ Level * Metric_corr * g.Marker, 
+                  data = config_tab_clean)
+  
+  # Moyennes ajusté par Level
+  emm3 <- emmeans(res_aov3, ~ Level | Metric_corr * g.Marker)
+  
+  # Lettre de significativités
+  cld3 <- cld(emm3, Letters = letters, alpha = 0.1) # p-value 0.1
+  cld_df3 <- as.data.frame(cld3)
+  
+  # Position des étiquettes
+  cld_df3 <- cld_df3 %>%
+    left_join(
+      config_tab %>%
+        group_by(Metric_corr, g.Marker, Level) %>%
+        summarise(
+          y = min(Correlation, na.rm = TRUE)
+        ),
+      by = c("Metric_corr", "g.Marker", "Level")
+    )
+  
+  # Plot
+  ggplot(config_tab_clean,
+         aes(x = Metric_corr,
+             y = Correlation)) +
+    
+    # boxplot
+    geom_boxplot(
+      width = 0.8,
+      outlier.size = 1.5,
+      fill = "grey80",
+      color = "black"
+    ) +
+    
+    # points (optionnel mais recommandé)
+    geom_jitter(
+      width = 0.15,
+      size = 1,
+      alpha = 0.5
+    ) +
+    
+    # facettes = structure tableau
+    facet_grid(Level ~ g.Marker,
+               scales = "free_x",
+               space = "free_x",
+               switch = "y",
+               drop = TRUE) +
+    
+    # axe en haut (tableau)
+    scale_x_discrete(position = "top") +
+    
+    geom_text(data = cld_df3,
+              aes(x = Metric_corr,
+                  y = y - 0.05,   # décale au-dessus
+                  label = .group),
+              inherit.aes = FALSE,
+              size = 5,
+              col = "red") +
+    
+    theme_minimal(base_size = 11) +
+    
+    theme(
+      #panel.grid = element_blank(),
+      #axis.title = element_blank(),
+      axis.title.x = element_blank(),
+      axis.line = element_line(color = "gray"),  # Lignes des axes en noir
+      axis.text = element_text(color = "black"),  # Texte des axes en noir
+      axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
+      
+      # strips
+      strip.background = element_blank(),
+      strip.placement = "outside",
+      strip.text.x = element_text(face = "bold"),
+      strip.text.y.left = element_text(angle = 0, face = "bold"),
+      
+      # axes
+      axis.text.x.top = element_text(face = "bold")
+    ) +
+    
+    labs(
+      y = "Correlation Botanical / Genetical"
+    ) +
+    
+    scale_y_continuous(
+      breaks = seq(0, 1, 0.2),
+      limits = c(-0.15, 1)
     )
 }
 
@@ -639,19 +807,25 @@ plot_correlogramme <- function(tab_rad, Marker){
   tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
   tab_rad$Level <- as.factor(tab_rad$Level)
   
-  # Mean and Standars deviation
+  # Median and quartiles
   tab_summary <- tab_rad %>%
     filter(g.Marker == Marker) %>%
     group_by(b.Radius, Level) %>%
-    summarise(mean_cor = mean(Correlation, na.rm = TRUE),
-              sd_cor = sd(Correlation, na.rm = TRUE),
-              .groups = "drop")
+    summarise(
+      median_cor = median(Correlation, na.rm = TRUE),
+      q1_cor = quantile(Correlation, 0.25, na.rm = TRUE),
+      q3_cor = quantile(Correlation, 0.75, na.rm = TRUE),
+      .groups = "drop"
+    )
   
   # Plot
-  ggplot(tab_summary, aes(x = b.Radius, y = mean_cor, color = Level, group = Level)) +
+  ggplot(tab_summary, aes(x = b.Radius, y = median_cor, color = Level, group = Level)) +
     geom_line() +
     geom_point() +
-    geom_errorbar(aes(ymin = mean_cor - sd_cor, ymax = mean_cor + sd_cor), width = 0.1) +
+    geom_errorbar(
+      aes(ymin = q1_cor, ymax = q3_cor),
+      width = 0.1
+    ) +
     labs(x = "Radius (m)", y = "Correlation") +
     theme_bw() +
     geom_hline(
@@ -659,7 +833,7 @@ plot_correlogramme <- function(tab_rad, Marker){
       linetype = "dashed"
     ) + 
     theme(plot.title = element_text(
-      hjust = 0.5,   # centré
+      hjust = 0.5,
       size = 14,
       face = "bold"
     )) +

@@ -65,7 +65,7 @@ summary_ab_rel <- function(config){
   
   # filter list
   filters <- filter_select_level(config$Level) 
-  filters$filter_monocot <- TRUE
+  filters$filter_monocot <- FALSE
   
   # Read grid All
   grid_all <- grid_read(config_all, filters)
@@ -165,7 +165,7 @@ percent_other <- function(df, var_ref, var_per_cols, threshold){
 
 # ---- Growth form ----
 
-growth_form_family <- function(fam_vec){
+growth_form_family <- function(fam_df){
   plants_nouragues <- import_plants_nouragues()
   
   plants_nouragues %>%
@@ -173,7 +173,7 @@ growth_form_family <- function(fam_vec){
     summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
     mutate(across(starts_with("stat."), ~ .x / rowSums(across(starts_with("stat."))) * 100)) %>%
     rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
-    filter(family %in% fam_vec)
+    inner_join(fam_df, by="family")
 }
 
 
@@ -234,7 +234,7 @@ give_genet_taxa <- function(Rar, Level, Marker){
   
   # Filtrage 
   names <- genet %>%
-    filter(!is.na(.data[[level]])) %>%
+    dplyr::filter(!is.na(.data[[level]])) %>%
     pull(.data[[level]]) %>%
     unique()
   
@@ -245,7 +245,7 @@ give_common_taxa <- function(Rar, Level) {
   
   # Bota vector direct
   bota <- import_bota(list(Year = 2012)) %>%
-    filter(!is.na(.data[[Level]])) %>%
+    dplyr::filter(!is.na(.data[[Level]])) %>%
     pull(.data[[Level]]) %>%
     unique()
   
@@ -286,7 +286,7 @@ grid_correlation <- function(row){
   # Split Metric_corr cases
   if(row$Metric_corr %in% c("Count","NCI")){
     row$b.Metric <- row$Metric_corr  # Bota
-    row$g.Metric <- "Reads"      # Génèt
+    row$g.Metric <- "Reads"          # Génèt
   }
   else if(row$Metric_corr %in% c("T+","T-","F+","F-","MCC")){
     row$b.Metric <- "Presence"   # Bota
@@ -314,6 +314,7 @@ grid_correlation <- function(row){
            fp = Metric.x == 0 & Metric.y == 1, # bota 0 genet 1
            fn = Metric.x == 0 & Metric.y == 1  # bota 1 genet 0
            )
+  
   # Ratios
   Tp <- sum(BG$tp)/length(BG$tp)
   Tn <- sum(BG$tn)/length(BG$tn)
@@ -324,6 +325,7 @@ grid_correlation <- function(row){
   grid_corr <- switch(row$Metric_corr,
                       "Count" = cor(B$Metric, G$Metric),
                       "NCI"   = cor(B$Metric, G$Metric),
+                      "OTU"   = cor(B$Metric, G$Metric),
                       "T+"    = Tp, # True positive
                       "T-"    = Tn, # True negative
                       "F+"    = Fp, # True positive

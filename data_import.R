@@ -27,7 +27,7 @@ create_sample_ref <- function(){
   
   # Extracts samples name and position
   sample_ref <- data_samples %>%
-    select(pcr,x,y) %>%
+    dplyr::select(pcr,x,y) %>%
     separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
     distinct(sample_loc, x, y)
   
