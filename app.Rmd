@@ -287,7 +287,7 @@ give_level_names(config)
 test_1 <- expand.grid(
   Type = "genet",
   Rar = c(FALSE,TRUE),
-  Marker = "18S",#c("GH","ITS","18S"),
+  Marker = c("GH","ITS","18S"),
   Level = c("Family"),
   Metric = "OTU",
   stringsAsFactors = FALSE
@@ -317,15 +317,10 @@ df_ab_rel_Richness <- bind_rows(test_1, test_3)
 view(df_ab_rel_Richness)
 
 # Save data
-# save( df_ab_rel_Richness,
-#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData")
+# save( df_combined,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_count_family.RData")
 
-# New data : OTU
 # load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
-#   envir = .GlobalEnv)
-
-# Previous data : reads and count
-# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_count_family.RData",
 #   envir = .GlobalEnv)
 
 ```
@@ -363,30 +358,29 @@ df_list <- lapply(seq_along(source_indices), function(i) {
 
 ```{r}
 
-# Sélectionner les éléments de df_list à combiner
-df_plot_rar <- bind_rows(df_list[c(2, 4, 6, 7)]) %>%
-  mutate(in_bota = Clade %in% df_list[7][[1]]$Clade)
-
-# All family
-all_fam <- df_plot_rar %>%
-  dplyr::filter(!Clade %in% c("Indet.","<2%")) %>%
+# All families
+all_fam <- df_plot_rar %>% 
+  dplyr::filter(Clade != "<2%") %>%
+  dplyr::filter(Clade != "Indet.") %>%
   pull(Clade) %>%
   unique()
 
-# Test in bota
+# Bota test color
 all_fam_df <- data.frame(
   family = all_fam,
   Clade = all_fam,
   in_bota = all_fam %in% df_list[7][[1]]$Clade
 )
 
+# Sélectionner les éléments de df_list à combiner
+df_plot_rar <- bind_rows(df_list[c(2, 4, 6, 7)]) %>%
+  left_join(all_fam_df, by = "Clade")
+
 # Plot abondance relative
 p1 <- ab_rel_plot(df_plot_rar)
 
-# Build growth_form Tab
+# Growth form
 growth_form <- growth_form_family(all_fam_df)
-
-# Plot growth_form
 p2 <- growth_form_plot(growth_form)
 
 # Patchwork
@@ -595,7 +589,8 @@ multcompLetters4(res_aov, tuk)
 ## D. Morpho
 
 ```{r}
-
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
+#   envir = .GlobalEnv)
 
 # Plot correlation bar
 morpho_corr_bar()

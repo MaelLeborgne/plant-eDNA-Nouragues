@@ -4,6 +4,7 @@
 
 # ===== Libraries =====
 library(tidyverse) # Basic
+library(dplyr) # select, filter
 library(ggplot2) # Plot
 library(viridis) # turbo
 library(patchwork)
@@ -235,7 +236,7 @@ patch_turbo_family <- function(factor = 1){
   patchwork::wrap_plots(plots, ncol = 7)
 }
 
-mono_turbo_species <- function(grid, bota, factor = 2) {
+mono_turbo_species <- function(grid, factor = 2) {
   
   fine <- interpolate_grid_2D(grid, factor)
   
@@ -268,7 +269,8 @@ mono_turbo_species <- function(grid, bota, factor = 2) {
         hjust = 0.5,   # centré
         size = 9,
         face = "bold.italic"
-      )
+      ),
+      plot.margin = margin(0, 20, 0, 20)
     ) +
     
     # légende horizontale sans titre
@@ -303,15 +305,6 @@ mono_turbo_species <- function(grid, bota, factor = 2) {
       vjust = 1,
       size = 3,
       color = "white"
-    )  +
-    geom_point(
-      data = bota,
-      aes(x = Xfield, y = Yfield, size = CircCorr/10),
-      shape = 21,   # cercle avec contour
-      fill = NA,    # pas de remplissage
-      colour = "white",
-      stroke = 0.3,
-      show.legend = FALSE
     ) +
     # ajouter nom de la famille centré en bas
     labs(caption = grid$config$Name)
@@ -348,7 +341,7 @@ patch_turbo_species <- function(Year){
     print(sp)
     
     # générer la heatmap
-    p <- mono_turbo_species(genet_grid, bota_focus)
+    p <- mono_turbo_species(genet_grid)
     
     # ajouter indice en haut à gauche
     p <- p +
@@ -375,6 +368,125 @@ patch_turbo_species <- function(Year){
         plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
       )
     )
+}
+
+patch_turbo_species_years <- function(Year1, Year2){
+  
+  # Import Genet species
+  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
+  
+  # Import bota species
+  bota1 <- import_bota(list("Year" = Year1))
+  bota2 <- import_bota(list("Year" = Year2))
+  
+  # Keep unique species
+  bota_sp1 <- unique(bota1$Species)
+  bota_sp2 <- unique(bota2$Species)
+  
+  # Common species with genet
+  common_sp <- Reduce(intersect, list(genet_sp, bota_sp1, bota_sp2)) %>%
+    sort()
+  
+  # List of mini plots
+  plots <- list()
+  
+  # Loop over species
+  for(i in seq_along(common_sp)) {
+    
+    # Set species
+    sp <- common_sp[i]
+    
+    # Print species
+    print(sp)
+    
+    # Genet config
+    genet_config <- list(
+      "Type" = "genet",
+      "Rar" = TRUE,
+      "Marker" = "GH",
+      "Level" = "Species",
+      "Name" = sp,
+      "Metric" = "Reads"
+    )
+    
+    # Genèt Grid
+    genet_grid <- grid_read(genet_config)
+    
+    # Bota year 1 grid
+    bota_focus1 <- import_bota(list("Year" = Year1)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(Year1, levels = c(Year1, Year2)))
+    
+    # Bota year 2 grid
+    bota_focus2 <- import_bota(list("Year" = Year2)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(Year2, levels = c(Year1, Year2)))
+    
+    # générer la heatmap
+    p <- mono_turbo_species(genet_grid)
+    
+    # Année 1
+    p <- p +
+      geom_point(
+        data = bota_focus1,
+        aes(x = Xfield, y = Yfield, size = CircCorr/2),
+        color = "red",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      )
+    
+    # Année 2
+    p <- p +
+      geom_point(
+        data = bota_focus2,
+        aes(x = Xfield, y = Yfield, size = CircCorr),
+        color = "orange",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      ) +
+      guides(size = "none")
+    
+    # # Year color
+    # p <- p +
+    #   scale_color_manual(
+    #     values = setNames(
+    #       c("red", "orange"),
+    #       c(as.character(Year1), as.character(Year2))
+    #     ),
+    #     name = "Year"
+    #   ) +
+    #   guides(size = "none")
+    
+    # index
+    p <- p +
+      annotate(
+        "text",
+        x = min(genet_grid$df$x),
+        y = max(genet_grid$df$y + 60),
+        label = paste0("(", i, ")"),
+        fontface = "bold",
+        hjust = 0,
+        vjust = 1,
+        size = 5
+      ) 
+    
+    
+    plots[[i]] <- p
+  }
+  
+  # assembler les plots en patchwork
+  wrap_plots(plots, ncol = 7) +
+    plot_annotation(
+      title = "Comparaison des Inventaires botaniques de 2012 et 2022 avec l'emprunte ADNe",
+      subtitle = "Au niveau specifique pour le marqueur GH",
+      theme = theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
+      )
+    ) 
+
 }
 
 ab_rel_plot <- function(df_plot){
@@ -411,7 +523,7 @@ ab_rel_plot <- function(df_plot){
   # Labels vector
   labels_vec <- setNames(df_labels$Label, df_labels$Clade)
   
-  # # x labels colors
+  # x labels colors
   labels_source <- c(
     "Bota" = "<span style='color:forestgreen;'> Bota </span>",
     "GH" = "<span style='color:red;'> GH </span>",
@@ -440,7 +552,7 @@ ab_rel_plot <- function(df_plot){
       y = "Proportion (%)",
       fill = "Clade",
       title = "Abondances relatives par Famille",
-      subtitle = "En richesse botanique et diversité d'OTU"
+      subtitle = "En richesse botanique et richesse d'OTU"
     ) +
     theme_minimal(base_size = 14) +
     theme(
@@ -705,12 +817,12 @@ morpho_corr_matrix <- function(config_tab){
       g.Marker == "GH",
       Metric_corr == "Count"
     ) %>%
-    select(Name, Correlation) %>%
+    dplyr::select(Name, Correlation) %>%
     rename(Species = Name, Model = Correlation)
   
   # Inner Join
   model_morpho_df <- inner_join(model, morpho, by = "Species") %>%
-    select(
+    dplyr::select(
       -Species, -Genus, -Family, -order, -subclass2, -subclass1
     )
   
@@ -758,12 +870,12 @@ morpho_corr_bar <- function(){
       g.Marker == "GH",
       Metric_corr == "Count"
     ) %>%
-    select(Name, Correlation) %>%
+    dplyr::select(Name, Correlation) %>%
     rename(Species = Name, Model = Correlation)
   
   # Inner Join
   model_morpho_df <- inner_join(model, morpho, by = "Species") %>%
-    select(
+    dplyr::select(
       -Species, -Genus, -Family, -order, -subclass2, -subclass1
     )
   
@@ -774,8 +886,25 @@ morpho_corr_bar <- function(){
     Variable = names(corr_vec),
     Correlation = corr_vec
   ) %>%
-    filter(Variable != "Model") %>%
+    dplyr::filter(Variable != "Model") %>%
     arrange(Correlation)
+  
+  # Labels colored
+  colors <- list(
+    "forestgreen" = c("Chlorophyll_content",	"Thickness",	"Toughness",	"Leaf_Area",	"SLA",	"C",	"N",	"13C",	"Ca",	"P",	"K"),
+    "orange" = c("Trunk_bark_thickness",	"Sapwood_WSG"),
+    "brown" = c("WSG"),
+    "brown" = c("Diameter",	"SRL",	"Tissue_density",	"SRTA",	"branchiness")
+  )
+  
+  # Transformer la liste en vecteur nommé (paramètre -> couleur)
+  param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
+  
+  # Générer les labels HTML automatiquement
+  labels_source <- setNames(
+    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
+    names(param_colors)
+  )
   
   # Plot
   ggplot(corr_df, aes(x = reorder(Variable, Correlation), y = Correlation, fill = Correlation)) +
@@ -791,12 +920,112 @@ morpho_corr_bar <- function(){
       y = "Pearson r",
       fill = "r"
     ) +
+    scale_x_discrete(labels = labels_source) +
     theme(
       plot.title = element_text(hjust = 0.5, face = "bold"),
       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
-      axis.text.y = element_text(hjust = 1, face = "bold")
+      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold")
     )
   
+}
+
+morpho_corr_nature <- function(){
+  
+  # Morpho
+  morpho <- import_plants_morpho() %>%
+    mutate(Species = gsub("_", " ", Species))
+  # Correlations
+  model <- tab_rar %>%
+    filter(Level == "Species",
+           g.Marker == "GH",
+           Metric_corr == "Count") %>%
+    dplyr::select(Name, Correlation) %>%
+    rename(Species = Name, Model = Correlation)
+  
+  # Join
+  df <- inner_join(model, morpho, by = "Species") %>%
+    dplyr::select(-Species, -Genus, -Family, -order, -subclass2, -subclass1)
+  
+  # CORRELATION
+  corr_mat <- cor(df, use = "pairwise.complete.obs")
+  
+  # Ordre basé sur Model
+  order_vars <- names(sort(corr_mat["Model", ], decreasing = TRUE))
+  order_vars <- c("Model", setdiff(order_vars, "Model"))
+  
+  # LONG FORMAT
+  corr_df <- as.data.frame(as.table(corr_mat))
+  colnames(corr_df) <- c("Var1", "Var2", "Correlation")
+  
+  # TRIANGLE (upper only)
+  corr_df <- corr_df %>%
+    mutate(
+      Var1 = factor(Var1, levels = order_vars),
+      Var2 = factor(Var2, levels = order_vars)
+    ) %>%
+    dplyr::filter(as.numeric(Var1) <= as.numeric(Var2))
+  
+  # GROUP COLORS
+  colors <- list(
+    forestgreen = c("Chlorophyll_content","Thickness","Toughness","Leaf_Area","SLA","C","N","13C","Ca","P","K"),
+    orange = c("Trunk_bark_thickness","Sapwood_WSG"),
+    brown = c("WSG","Diameter","SRL","Tissue_density","SRTA","branchiness"),
+    black = c("Model")
+  )
+  
+  param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
+  
+  labels <- setNames(
+    paste0("<span style='color:", param_colors, ";'>", names(param_colors), "</span>"),
+    names(param_colors)
+  )
+  
+  # PLOT
+  ggplot(corr_df, aes(Var1, Var2, fill = Correlation)) +
+    
+    geom_tile(color = "white", size = 0.3) +
+    
+    # option valeurs (léger)
+    geom_text(aes(label = ifelse(abs(Correlation) > 0.5,
+                                 sprintf("%.2f", Correlation), "")),
+              size = 3,
+              color = "white",
+              fontface = "bold") +
+    
+    scale_fill_gradient2(
+      low = "#3B4CC0",
+      mid = "white",
+      high = "#B40426",
+      midpoint = 0,
+      limits = c(-1, 1)
+    ) +
+    
+    scale_x_discrete(labels = labels) +
+    scale_y_discrete(labels = labels) +
+    
+    coord_fixed() +
+    
+    theme_minimal(base_size = 13) +
+    
+    labs(
+      title = "Trait correlation matrix",
+      subtitle = "Ordered by correlation with Model (GH marker)",
+      fill = "r"
+    ) +
+    
+    theme(
+      panel.grid = element_blank(),
+      
+      axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
+      axis.text.y.left = element_markdown(face = "bold"),
+      
+      axis.title = element_blank(),
+      
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5),
+      
+      legend.position = "right"
+    )
 }
 
 # ===== 3. CORRELOGRAME RADIUS =====
