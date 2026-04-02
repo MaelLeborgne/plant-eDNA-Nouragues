@@ -204,6 +204,9 @@ bota_grid_read <- function(grid, filters=list()){
                stop("Unknown Metric: ", M)  # gestion d'erreur
   )
   
+  grid$df <- grid$df %>%
+    dplyr::select(-sample_loc)
+  
   return(grid)
 }
 
@@ -311,12 +314,24 @@ genet_grid_read <- function(grid, filters = list()){
   )
   
   # Join by sample_loc
-  grid$df <- left_join(grid$df, metric_df, by="sample_loc")
+  grid$df <- left_join(grid$df, metric_df, by="sample_loc") %>%
+    dplyr::select(-sample_loc)
   
   # Merge Metric cols
   grid$df <- grid$df %>%
     mutate(Metric = coalesce(Metric.y, Metric.x)) %>%
     dplyr::select(-Metric.x, -Metric.y)
+  
+  return(grid)
+}
+
+# ==== ABIOTIC ====
+
+abiotic_grid_read <- function(grid){
+  
+  grid$df <- import_abiotic() %>% 
+    dplyr::select(x,y,.data[[grid$config$Metric]]) %>%
+    rename(Metric = grid$config$Metric)
   
   return(grid)
 }
@@ -335,6 +350,9 @@ grid_read <- function(config, filters=list()){
   }
   else if (config$Type == "genet"){
     grid <- genet_grid_read(grid, filters)
+  }
+  else if (config$Type == "abiotic"){
+    grid <- abiotic_grid_read(grid)
   }
   else{
     stop(paste0("Unknown config$Type : ", config$Type))

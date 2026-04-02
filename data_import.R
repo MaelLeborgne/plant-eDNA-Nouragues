@@ -139,18 +139,19 @@ import_genet <- function(config){
 
 import_abiotic <- function(){
   
-  # Set directory
-  setwd(paste0(PROJECT_PATH,"Zinger_plants_nouragues/"))
+  setwd(PROJECT_PATH)
   
   # Read TXT
-  data <- read.table("Zinger_et_al_metabar_PP1_samples.txt",
+  data <- read.table("data/Zinger_plants_nouragues/Zinger_et_al_metabar_PP1_samples.txt",
                              header = TRUE,
                              comment.char = "#")
   
   # Split samples name
   abiotic <- data %>%
     separate(pcr, into = c("sample_loc", "sample_rep"), sep = "_") %>%
-    filter(!control) # Remove controls
+    filter(!control) %>% # Remove controls
+    dplyr::select(-c(tag_combo, control,sample, sample_loc, sample_rep, chempred)) %>% # select
+    dplyr::distinct(x, y, .keep_all = TRUE) # Remove replicats
   
   return(abiotic)
 }
@@ -163,7 +164,8 @@ import_plants_morpho <- function(){
   setwd(paste0(PROJECT_PATH,"data/Giacomo_plant_morpho/"))
   
   # Read XLS
-  data <- read_excel("Appendix_S2-6___S8-13.xlsx", sheet = "App.S6-ok", skip = 3)
+  data <- read_excel("Appendix_S2-6___S8-13.xlsx", sheet = "App.S6-ok", skip = 3) %>%
+    mutate(Species = gsub("_", " ", Species))
   
   return(data)
 }

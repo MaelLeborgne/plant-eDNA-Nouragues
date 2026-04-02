@@ -807,8 +807,7 @@ corr_boxplot <- function(config_tab){
 morpho_corr_matrix <- function(config_tab){
   
   # Import Morpho
-  morpho <- import_plants_morpho() %>%
-    mutate(Species = gsub("_", " ", Species))
+  morpho <- import_plants_morpho()
   
   # Read Model
   model <- tab_rar %>%
@@ -868,7 +867,7 @@ morpho_corr_bar <- function(){
     filter(
       Level == "Species",
       g.Marker == "GH",
-      Metric_corr == "Count"
+      Metric_corr == "NCI"
     ) %>%
     dplyr::select(Name, Correlation) %>%
     rename(Species = Name, Model = Correlation)
@@ -938,7 +937,7 @@ morpho_corr_nature <- function(){
   model <- tab_rar %>%
     filter(Level == "Species",
            g.Marker == "GH",
-           Metric_corr == "Count") %>%
+           Metric_corr == "NCI") %>%
     dplyr::select(Name, Correlation) %>%
     rename(Species = Name, Model = Correlation)
   
