@@ -284,6 +284,12 @@ bota <- import_bota(list(Year=2012)) %>%
 nour <- import_plants_nouragues() %>%
   pull(species)
 
+length(morpho)
+length(g_gh)
+length(g_its)
+length(g_18s)
+length(bota)
+length(nour)
 
 # Diagramme de Venn
 
@@ -303,7 +309,15 @@ listes <- list(
 data_upset <- fromList(listes)
 
 # plot
-upset(data_upset)
+
+UpSetR::upset(data_upset,
+      nsets = ncol(data_upset),
+      order.by = "freq",
+      show.numbers = "yes",
+      set_size.show = TRUE,
+      set_size.scale_max = 3000) 
+
+
 
 ```
 
@@ -397,8 +411,47 @@ view(df_ab_rel_Richness)
 
 ```
 
+## B.1 Table Annexe
 
-### B. Replace \< 2% families
+```{r}
+
+# Copy
+df_reduced <- df_ab_rel_Richness
+
+# Annotate
+df_reduced$Result <- lapply(seq_len(nrow(df_reduced)), function(i) {
+    df_reduced$Result[[i]] %>% 
+    mutate(Metric = round(Metric, digits = 2)) %>%
+    mutate( `<2%` = ifelse(Metric < 2 ,TRUE ,FALSE)) %>%
+    mutate( `<0.05%` = ifelse(Metric < 0.05 ,TRUE ,FALSE))
+  })
+
+# Classify
+source_names <- c( "GH","GH", "ITS","ITS", "18S","18S", "Bota")
+
+df_list <- lapply(1:7, function(i) {
+  
+  # Select
+  df <- df_reduced$Result[[i]]
+  
+  # Ajouter la colonne Source
+  df$Source <- source_names[i]
+  
+  return(df)
+})
+
+# Combine
+df_plot_rar <-  bind_rows(df_list[c(2,4,6,7)]) %>%
+  mutate( in_bota = Clade %in% df_list[7][[1]]$Clade) %>%
+  dplyr::filter(!Metric < 0.5)
+
+# Plot
+ab_rel_tab(df_plot_rar)
+
+```
+
+
+### B.2 Replace \< 2% families
 
 ```{r}
 
@@ -431,9 +484,9 @@ df_list <- lapply(seq_along(source_indices), function(i) {
 ```{r}
 
 # All families
-all_fam <- df_plot_rar %>% 
-  dplyr::filter(Clade != "<2%") %>%
-  dplyr::filter(Clade != "Indet.") %>%
+all_fam <-  bind_rows(df_list[c(2,4,6,7)]) %>% 
+  # dplyr::filter(Clade != "<2%") %>%
+  # dplyr::filter(Clade != "Indet.") %>%
   pull(Clade) %>%
   unique()
 
@@ -458,6 +511,58 @@ p2 <- growth_form_plot(growth_form)
 # Patchwork
 (p1 | p2)
 ```
+
+### D. Linear model BA / OTU
+
+```{r}
+
+
+# List of dataframes
+dfs <- list(
+  OTU    = df_ab_rel_Richness$Result[[7]],
+  BA  = df_ab_rel_Richness$Result[[9]]
+)
+
+# Combine dataframes
+compare <- dfs %>%
+  imap(~ rename(.x, !!.y := Metric)) %>%   # renomme Metric avec le nom de la liste
+  reduce(inner_join, by = "Clade")     # inner join
+
+# Plot
+ggplot(compare, aes(x = OTU, y = BA)) +
+  geom_point() +
+  coord_fixed() +
+  theme_light() +
+  geom_smooth(method = "lm", col = "red") +
+  labs(
+    y = "Basal Area (m²)",
+    x = "OTU Richness"
+  )
+```
+
+```{r}
+
+# List of dataframes
+dfs <- list(
+  genet    = df_ab_rel_Richness$Result[[2]],
+  bota  = df_ab_rel_Richness$Result[[9]]
+)
+
+# Combine dataframes
+compare <- dfs %>%
+  imap(~ rename(.x, !!.y := Metric)) %>%   # renomme Metric avec le nom de la liste
+  reduce(inner_join, by = "Clade")     # inner join
+
+# Plot
+ggplot(compare, aes(x = genet, y = bota)) +
+  geom_point() +
+  coord_fixed() +
+  theme_light() +
+  xlim(0, 60) + 
+  ylim(0, 60)
+
+```
+
 
 
 # 3. Correlation tab
@@ -892,6 +997,7 @@ ggplot(var_imp, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
 # Impacte d'une variable :
 library(pdp)
 partial(rf_model, pred.var = "Cd") %>% plotPartial()
+
 ```
 
 
@@ -993,5 +1099,3 @@ rf_cv$finalModel
 ```
 
 # 6. Indicateur de bruit généralisé
-
-
