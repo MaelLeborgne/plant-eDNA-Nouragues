@@ -361,6 +361,8 @@ config <- list(
 give_level_names(config)
 ```
 
+
+# I. TAXONOMY DETECTION
 # 2. Tables d'Abondance realtives
 
 ## Family
@@ -411,7 +413,7 @@ view(df_ab_rel_Richness)
 
 ```
 
-## B.1 Table Annexe
+### B.1 Table Annexe
 
 ```{r}
 
@@ -490,11 +492,23 @@ all_fam <-  bind_rows(df_list[c(2,4,6,7)]) %>%
   pull(Clade) %>%
   unique()
 
+# Bota families
+bota_fam <- df_list[7][[1]]$Clade
+
+# Genet families
+gen_fam <- bind_rows(df_list[c(2,4,6)]) %>% 
+  # dplyr::filter(Clade != "<2%") %>%
+  # dplyr::filter(Clade != "Indet.") %>%
+  pull(Clade) %>%
+  unique()
+
 # Bota test color
 all_fam_df <- data.frame(
   family = all_fam,
   Clade = all_fam,
-  in_bota = all_fam %in% df_list[7][[1]]$Clade
+  in_bota = all_fam %in% bota_fam & !all_fam %in% gen_fam,
+  in_genet = all_fam %in% gen_fam & !all_fam %in% bota_fam,
+  in_both = all_fam %in% bota_fam & all_fam %in% gen_fam
 )
 
 # Sélectionner les éléments de df_list à combiner
@@ -564,8 +578,8 @@ ggplot(compare, aes(x = genet, y = bota)) +
 ```
 
 
-
-# 3. Correlation tab
+# II. SPATIAL PATTERNS
+# 1. Correlation tab
 
 ## A. Create
 
@@ -654,7 +668,7 @@ view(tab_rar)
 
 ```
 
-## B. Plot tabs
+## B. Plot corrtabs and boxtab
 
 ```{r}
 
@@ -701,6 +715,34 @@ tab_rar %>%
       Metric_corr %in% c("Count","NCI","MCC")
     ) %>%
   corr_boxplot()
+
+# Taxo / marker comparison
+# Sencitivity TP / (TP + FN) / Specificity TN / (TN + FP) / MCC ???
+# tab_rar %>%
+#     filter(
+#       Level %in% c("Family","Genus","Species"),
+#       g.Marker %in% c("GH","ITS","18S"),
+#       Metric_corr %in% c("Sen","Spe","MCC")
+#     ) %>%
+#   corr_boxplot()
+
+# Species Level
+# tab_rar %>%
+#     filter(
+#       Level %in% c("Species"),
+#       g.Marker %in% c("GH","ITS"),
+#       Metric_corr %in% c("MCC","Count","NCI")
+#     ) %>%
+#   corr_boxplot_taxo()
+
+# Taxo box plot
+tab_rar %>%
+    filter(
+        Level %in% c("Family","Genus","Species"),
+        g.Marker %in% c("GH"),
+        Metric_corr %in% c("MCC")
+    ) %>%
+    corr_boxplot_taxo()
 
 
 ```
@@ -763,7 +805,7 @@ multcompLetters4(res_aov, tuk)
 
 ```
 
-## D. Morpho
+# 2. Morpho
 
 ```{r}
 # load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
@@ -780,7 +822,7 @@ morpho_corr_matrix()
 ```
 
 
-# 4. Correlograme
+# 3. Correlograme Radius
 
 ```{r}
 # Levels
@@ -830,7 +872,7 @@ p3 <- plot_correlogramme(tab_rad,"18S")
 
 ```
 
-# 5. Abiotic Factors
+# 4. Abiotic Factors
 
 ## Abiotic Pannel
 
@@ -880,7 +922,7 @@ wrap_plots(plot_list, ncol = 10)
 ```
 
 
-## Light VS Reads
+## Reads VS Light
 
 ```{r}
 
@@ -960,6 +1002,42 @@ nb <- spdep::dnearneigh(coords, 0, 1)  # voisins à distance ≤ 1 unité
 lw <- spdep::nb2listw(nb, style = "W")
 spdep::moran.test(compare$reads, lw)
 ```
+
+## Diversity VS Light
+
+```{r}
+
+# Abiotic
+light <- grid_read(list(
+  Type = "abiotic",
+  Metric = "light"))
+
+# Grid
+h1 <- grid_read(list(
+  Type = "genet",
+  Rar = TRUE,
+  Marker = "GH",
+  Level = "Family",
+  Name = "All",
+  Metric = "H1"))
+
+# List of dataframes
+dfs <- list(
+  light = light$df,
+  h1 = h1$df
+)
+
+# Combine dataframes
+compare <- dfs %>%
+  imap(~ rename(.x, !!.y := Metric)) %>%   # renomme Metric avec le nom de la liste
+  reduce(inner_join, by = c("x", "y"))     # inner join
+
+# Plot
+ggplot(compare, aes(x = light, y = h1)) +
+  geom_point()
+
+```
+
 
 ## Random Forest
 
@@ -1098,4 +1176,470 @@ rf_cv$finalModel
 
 ```
 
-# 6. Indicateur de bruit généralisé
+## 5. Circonférence / étendue spatiale
+
+```{r}
+
+# Bota
+
+bota <- import_bota()
+
+# Genet
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Family",
+  Name = "All",
+  Metric = "Reads")
+
+# Grid
+reads <- grid_read(config)
+
+
+```
+
+
+# III. DIVERSITY PATTERNS
+
+## 1. Rank / Abundance Curve
+
+```{r}
+
+library("entropart")
+
+# BOTA
+rank_ab_vec_bota <- function(df, Level){
+  df %>% 
+    group_by(.data[[Level]]) %>% 
+    summarize(Abundance = n()) %>%
+    arrange(desc(Abundance)) %>%
+    mutate(Rank = 1:length(Abundance))
+}
+
+plot_Whittaker_bota <- function(df, Level){
+  Ab_tib <- rank_ab_vec_bota(df, Level)
+
+  # Build a named vector
+  Ab_vec <- Ab_tib$Abundance
+  names(Ab_vec) <- Ab_tib[[Level]]
+  
+  # Vector of abundances
+  Ab_vec %>% as.AbdVector() -> Ab_vec
+  
+  # Whittaker plot
+  plot(Ab_vec, Distribution = "lnorm", main = "Bota")
+  param <- RAClnorm(Ab_vec)
+  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Abundance),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
+}
+
+# WHITTAKER PLOT
+bota <- import_bota(list("Year" = 2012))
+plot_Whittaker_bota(bota, "Species")
+
+
+# GENET
+
+# Rank Tibble
+rank_ab_vec_genet <- function(df, Level){
+  
+  Reads <- colSums(df$reads)
+  as.data.frame(Reads) -> Reads
+  Reads$id <- row.names(Reads)
+  
+  Ab_tib <- left_join(df$motus, Reads, by = "id") %>%
+    dplyr::filter(!is.na(.data[[Level]])) %>%
+    group_by(.data[[Level]]) %>%
+    summarise(Reads = sum(Reads))
+  
+  Ab_tib %>% 
+    arrange(desc(Reads)) %>%
+    mutate(Rank = 1:length(Reads))
+}
+
+# Whittaker plot
+plot_Whittaker_genet <- function(df, Level){
+  
+  Ab_tib <- rank_ab_vec_genet(df, Level)
+
+  # Build a named vector
+  Ab_vec <- Ab_tib$Reads
+  names(Ab_vec) <- Ab_tib[[Level]]
+  
+  # Vector of abundances
+  Ab_vec %>% as.AbdVector() -> Ab_vec
+  
+  # Whittaker plot
+  plot(Ab_vec, Distribution = "lnorm", ylab = "Reads")
+  param <- RAClnorm(Ab_vec)
+  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
+}
+
+# Plot list
+par(mfrow = c(1,3))
+
+bota <- import_bota(list("Year" = 2012))
+plot_Whittaker_bota(bota, "Family")
+
+plot_list <- lapply(c("GH","ITS"), function(m){
+  metabarlist <- import_genet(
+  list(
+    "Marker" = m,
+    "Rar" = TRUE
+  ))
+  plot_Whittaker_genet(metabarlist, "family")
+  title(main = m)
+})
+
+# # Multi marker curves + bota
+# 
+# vec_list <- lapply(c("GH","ITS","18S"), function(m){
+#   metabarlist <- import_genet(
+#   list(
+#     "Marker" = m,
+#     "Rar" = TRUE
+#   ))
+#   rank_ab_vec_genet(metabarlist, "family") %>%
+#     mutate(Marker = m)
+# })
+# 
+# bota <- import_bota(list("Year" = 2012))
+# vec_list[[4]] <- rank_ab_vec_bota(bota, "Family") %>%
+#     mutate(Marker = "Bota")
+# 
+# multi_marker_rank <- bind_rows(vec_list)
+# 
+# ggplot(multi_marker_rank, aes(x=Rank,y=Reads,color = Marker)) +
+#   theme_light() +
+#   geom_point(shape=21) +
+#   scale_y_log10()
+
+
+```
+
+## 2. Rank correspondance
+
+```{r}
+# Tests statistiques :
+
+# 1. “Est-ce que les rangs sont respectés entre inventaires ?”
+# Kendall's tau
+# cor.test(rank_inv1, rank_inv2, method = "kendall")
+# library(irr)
+# kendall(matrix_des_rangs)
+
+# 2. “Est-ce que le génétique amplifie la dominance ?”
+# Régression
+# lm(log(abond_genetique) ~ log(abond_botanique))
+# 🔍 Interprétation
+# pente = 1 → pas de changement de structure
+# pente > 1 → amplification des dominantes
+# pente < 1 → atténuation
+
+# Bota
+bota <- import_bota(list("Year" = 2012))
+Ab_bota <- rank_ab_vec_bota(bota, "Family")
+# GH
+metabarlist <- import_genet(
+  list(
+    "Marker" = "GH",
+    "Rar" = TRUE
+  ))
+Ab_GH <- rank_ab_vec_genet(metabarlist, "family") %>%
+  rename(Family = family)
+# ITS
+metabarlist <- import_genet(
+  list(
+    "Marker" = "ITS",
+    "Rar" = TRUE
+  ))
+Ab_ITS <- rank_ab_vec_genet(metabarlist, "family") %>%
+  rename(Family = family)
+
+# JOIN
+plot_log_log <- function(Ab1, Ab2, marker){
+  Ab_join_GH <- inner_join(Ab1, Ab2, by = "Family")
+  
+  ggplot(Ab_join_GH,aes(x = log(Abundance),y = log(Reads))) +
+    theme_light() +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    coord_fixed() +
+    xlim(0, 15) +
+    ylim(0, 15) +
+    labs(title = paste0(marker, " ~ Bota")) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16))
+}
+
+
+p1 <- plot_log_log(Ab_bota, Ab_GH, "GH")
+p2 <- plot_log_log(Ab_bota, Ab_ITS, "ITS")
+p1 | p2
+
+```
+
+
+## 3. Diversity distance-decay (Irène)
+```{r}
+
+divLeinster <- function(q=2 ,spxp , Z=NULL,  check = TRUE){
+  #Calcul the diversity of each site of sites by species matrix. 
+  #spxp columns and Z rows and columns are assumed to be in the same order.
+
+  if (is.null(Z)) Z <- diag(ncol(spxp))
+  if (check){
+    if (!inherits(spxp, "matrix")) {
+      stop("object \"spxp\" is not of class \"matrix\"")}  
+    if (!inherits(Z, "matrix")) {
+      stop("object \"Z\" is not of class \"matrix\"")}  
+    if (!all(c(ncol(Z), nrow(Z)) == ncol(spxp))){
+      stop("object \"Z\" and object \"spxp\" does not have matching dimensions")}
+  }  
+
+  spxp <- sweep(spxp, 1, rowSums(spxp), "/")
+  Zp <- Z %*% t(spxp)
+
+  if (q != 1 & q != Inf){
+    mat <- t(spxp) * (Zp)^(q-1)
+    mat[is.na(mat)] <- 0
+    D <- colSums(mat) ^ (1/(1-q))
+  }
+
+  if (q==Inf)  {
+    D <- 1/ apply(Zp, 2, max)
+  }  
+
+  if (q == 1){
+    D <- apply(Zp^t(spxp), 2, function(x) 1/prod(x))
+  }
+
+  return(D)
+}
+
+
+abgDecompQ <- function(spxp, Z=NULL, q=2, check=TRUE) {
+  #Calcul the diversity of each site of sites by species matrix. 
+  #spxp columns and Z rows/cols are assumed to be in the same order.
+
+  if (is.null(Z)) Z <- diag(ncol(spxp))
+  if (check){
+    if (!inherits(spxp, "matrix")) {
+      stop("object \"spxp\" is not of class \"matrix\"")}  
+    if (!inherits(Z, "matrix")) {
+      stop("object \"Z\" is not of class \"matrix\"")}  
+    if (!all(c(ncol(Z), nrow(Z)) == ncol(spxp))){
+      stop("object \"Z\" and object \"spxp\" does not have matching dimensions")}
+  }
+
+  site.weight <- rep(1/nrow(spxp), nrow(spxp))
+  spxp <- sweep(spxp, 1, rowSums(spxp), "/")
+
+  gamma.ab <- colSums(sweep(spxp, 1, site.weight, "*"))
+
+  Gamma <- divLeinster(t(as.matrix(gamma.ab)), Z=Z , q=q, check = FALSE)
+  Alphas <- divLeinster(spxp, Z=Z , q=q, check = FALSE) 
+
+  if (q != 1 & q != Inf) {
+    mAlpha <- (sum(site.weight * (Alphas ^ (1 - q))))^(1 / (1 - q))
+  }
+
+  if (q==1){
+    mAlpha <- exp(sum(site.weight * log(Alphas)))
+  }
+
+  if (q==Inf){
+    mAlpha <- min(Alphas)
+  }
+
+  Beta <- Gamma / mAlpha
+
+  names(Alphas) <- row.names(spxp)
+  res <- list(Gamma=Gamma, Beta=Beta, mAlpha=mAlpha, Alphas=Alphas)
+
+  return(res)
+}
+
+BetaDisQ <- function(q=2,spxp, Z=NULL, check = TRUE){
+  #Calcul the site pairwise diversity of a sites by species matrix. 
+  #spxp columns and Z rows/cols are assumed to be in the same order.
+  # this function uses the Jaccard‐type overlap (UqN) as a measure of similarity
+
+  N <- nrow(spxp)
+  dis <- matrix(NA, N, N)
+  
+  for (i in 2:N) {
+    for (j in 1:(i-1)) {
+      spxp.dummy <- spxp[c(i,j), ]
+      res <- abgDecompQ(as.matrix(spxp.dummy), Z = NULL, q = q, check = FALSE)
+      dis[i, j] <- dis[j, i] <- res$Beta
+    }
+  }
+
+  diag(dis) <- 1
+  dis <- dis - 1
+  row.names(dis) <- colnames(dis) <- row.names(spxp)
+
+  return(dis)
+}
+
+
+# Execution :
+
+# Import data
+GH <- import_genet(list("Rar" = TRUE, "Marker" = "GH"))
+ta_matrice_OTU <- GH$reads
+
+# Group by family
+fam_vec <- GH$motus %>% 
+  drop_na(family) %>% 
+  pull(family) %>% 
+  unique()
+
+n_fam <- length(fam_vec)
+N <- nrow(ta_matrice_OTU)
+ta_matrice_family <- matrix(NA, N, n_fam)
+row.names(ta_matrice_family) <- row.names(ta_matrice_OTU)
+colnames(ta_matrice_family) <- fam_vec
+
+for (i in 1:n_fam) {
+  fam <- fam_vec[i]
+  grid <- grid_read(list("Type"="genet","Rar"=TRUE, "Marker"="GH", "Level"="Family", "Name"=fam, "Metric"="Reads"))
+  ta_matrice_family[,i] <- grid$df$Metric
+}
+
+view(ta_matrice_family)
+
+# Matrice de similarité
+beta.sim <- BetaDisQ(spxp = ta_matrice_family, q=1)
+beta.sim ## we obtain a similarity matrix
+
+# Matrice de distance
+
+xy_loc <- grid_read(list("Type"="genet","Rar"=TRUE, "Marker"="GH", "Level"="Family", "Name"=fam_vec[1], "Metric"="Reads"))$df %>% dplyr::select(-Metric)
+
+dist_mat <- as.matrix(dist(xy_loc[, c("x", "y")]))
+row.names(dist_mat) <- colnames(dist_mat) <- row.names(spxp)
+  
+
+# Distance-decay Plot
+
+sim_df  <- as.data.frame(as.table(beta.sim))
+dist_df <- as.data.frame(as.table(dist_mat))
+
+colnames(sim_df)  <- c("point1", "point2", "similarity")
+colnames(dist_df) <- c("point1", "point2", "distance")
+
+df <- merge(dist_df, sim_df, by = c("point1", "point2"))
+
+df <- df[df$point1 != df$point2, ]
+
+df <- df[as.character(df$point1) < as.character(df$point2), ]
+
+df_pt1 <- df[df$point1 == "017", ]
+
+ggplot(df_pt1, aes(x = distance, y = similarity)) +
+  geom_point() +
+  theme_minimal()
+
+
+
+
+
+```
+
+## 4. Diversity patterns diff
+
+```{r}
+
+
+# Bota diversity
+bota_H1_grid <- grid_read(list(
+  Type = "bota",
+  Year = "2012",
+  Radius = "pixel",
+  Metric = "H1",
+  Level = "Family",
+  Name = "All"))
+
+# Genet diversity
+GH_H1_grid <- grid_read(list(
+  "Type"="genet",
+  "Rar"=TRUE, 
+  "Marker"="GH", 
+  "Metric"="H1", 
+  "Level"="Family", 
+  "Name"="All"))
+
+p1 <- plot_grid_interp_soft(bota_H1_grid) +
+  labs(title = "Bota", caption = "", fill = "H1") 
+p2 <- plot_grid_interp_soft(GH_H1_grid) +
+  labs(title = "GH", caption = "", fill = "H1")
+
+p1 + p2
+
+```
+
+## 5. Random Forest
+
+```{r}
+library(randomForest)
+
+# Random forest function
+rand_for_IncMSE <- function(data_pixel){
+  
+  set.seed(123) # For reproductibility
+  
+  rf_model <- randomForest(
+    Metric ~ .,              # toutes les variables explicatives
+    data = data_pixel %>% dplyr::select(-x, -y, -sample_loc),  # enlever coordonnées si non pertinentes
+    ntree = 500,
+    importance = TRUE
+  )
+  
+  # # importance des variables
+  # importance(rf_model)
+  # varImpPlot(rf_model)
+  
+  # Plot
+  var_imp <- as.data.frame(importance(rf_model))
+  var_imp$Variable <- rownames(var_imp)
+  
+  ggplot(var_imp, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
+    geom_col(fill = "grey") +
+    coord_flip() +
+    theme_light() +
+    theme(
+      plot.title = element_text(hjust = 0.5,size = 12, face="bold"),
+      axis.text.y.left = element_text(face="bold")
+    )
+}
+
+# Import data
+abiotic <- import_abiotic() %>%
+  dplyr::select(x,y,light,canop12,topo,wetness,C,Ca,Al,K)
+
+genet <- GH_H1_grid$df
+bota <- bota_H1_grid$df
+
+
+
+# Bota Plot
+data_pixel_bota <- inner_join(bota, abiotic, by = c("x","y"))
+p3 <- rand_for_IncMSE(data_pixel_bota) +
+  labs(y = "%IncMSE", x = "", title = "Bota")
+
+# Genet Plot
+data_pixel_genet <- inner_join(genet, abiotic, by = c("x","y"))
+p4 <- rand_for_IncMSE(data_pixel_genet) +
+  labs(y = "%IncMSE", x = "", title = "GH")
+
+# Multiplot
+(p1 | p2) /
+(p3 | p4)
+
+# # Impacte d'une variable :
+# library(pdp)
+# partial(rf_model, pred.var = "Cd") %>% plotPartial()
+
+```

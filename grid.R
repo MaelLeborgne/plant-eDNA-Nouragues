@@ -204,9 +204,6 @@ bota_grid_read <- function(grid, filters=list()){
                stop("Unknown Metric: ", M)  # gestion d'erreur
   )
   
-  grid$df <- grid$df %>%
-    dplyr::select(-sample_loc)
-  
   return(grid)
 }
 
@@ -314,8 +311,7 @@ genet_grid_read <- function(grid, filters = list()){
   )
   
   # Join by sample_loc
-  grid$df <- left_join(grid$df, metric_df, by="sample_loc") %>%
-    dplyr::select(-sample_loc)
+  grid$df <- left_join(grid$df, metric_df, by="sample_loc")
   
   # Merge Metric cols
   grid$df <- grid$df %>%
