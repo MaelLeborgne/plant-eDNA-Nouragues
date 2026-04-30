@@ -828,7 +828,7 @@ corr_boxplot <- function(config_tab){
   # ordre des colonnes (Metric)
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("Count","NCI","T+","T-","MCC")
+    levels = c("NCI","Count","T+","T-","MCC")
   )
   
   # ordre des lignes (Level)
@@ -857,18 +857,18 @@ corr_boxplot <- function(config_tab){
       config_tab %>%
         group_by(Metric_corr, g.Marker, Level) %>%
         summarise(
-          y = min(Correlation, na.rm = TRUE)
+          pos = min(Correlation, na.rm = TRUE)
         ),
       by = c("Metric_corr", "g.Marker", "Level")
     )
   
   # Plot
   ggplot(config_tab_clean,
-         aes(x = Metric_corr,
-             y = Correlation)) +
+         aes(x = Correlation,
+             y = Metric_corr)) +
     
     # boxplot
-    geom_boxplot(
+    geom_violin(
       width = 0.8,
       outlier.size = 1.5,
       fill = "grey80",
@@ -883,29 +883,32 @@ corr_boxplot <- function(config_tab){
     ) +
     
     # facettes = structure tableau
-    facet_grid(Level ~ g.Marker,
+    facet_grid(g.Marker ~ Level,
                scales = "free_x",
                space = "free_x",
                switch = "y",
                drop = TRUE) +
     
     # axe en haut (tableau)
-    scale_x_discrete(position = "top") +
+    scale_x_continuous(position = "top") +
     
     geom_text(data = cld_df3,
-              aes(x = Metric_corr,
-                  y = y - 0.05,   # décale au-dessus
+              aes(x = pos - 0.05,   # position sur axe x
+                  y = Metric_corr,
                   label = .group),
               inherit.aes = FALSE,
               size = 5,
               col = "red") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black")+
+    geom_vline(xintercept = 1, linetype = "dashed", color = "black")+
     
     theme_minimal(base_size = 11) +
     
     theme(
-      #panel.grid = element_blank(),
+      panel.grid = element_blank(),
       #axis.title = element_blank(),
-      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.title.x.bottom = element_text(size=12),
       axis.line = element_line(color = "gray"),  # Lignes des axes en noir
       axis.text = element_text(color = "black"),  # Texte des axes en noir
       axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
@@ -913,18 +916,17 @@ corr_boxplot <- function(config_tab){
       # strips
       strip.background = element_blank(),
       strip.placement = "outside",
-      strip.text.x = element_text(face = "bold"),
-      strip.text.y.left = element_text(angle = 0, face = "bold"),
+      strip.text.x = element_text(face = "bold",size=14),
+      strip.text.y.left = element_text(angle = 0, face = "bold",size=14),
       
       # axes
       axis.text.x.top = element_text(face = "bold")
     ) +
     
     labs(
-      y = "Correlation Botanical / Genetical"
-    ) +
-    
-    scale_y_continuous(
+      x = "Correlation coefficient"
+    ) + 
+    scale_x_continuous(
       breaks = seq(0, 1, 0.2),
       limits = c(-0.15, 1)
     )

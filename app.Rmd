@@ -236,7 +236,7 @@ grid <- grid_read(config)
 plot_grid(grid)
 ```
 
-## Geographical correspondance
+## Venn diagramm
 
 ```{r}
 
@@ -1310,10 +1310,17 @@ plot_list <- lapply(c("GH","ITS"), function(m){
   title(main = m)
 })
 
+
+```
+
+### Venn diagramm
+
+```{r}
+
 # Tib list
 
 config_tab <- expand.grid(
-  "Marker" = c("Bota","GH","ITS"),
+  "Marker" = c("Bota","GH","ITS","18S"),
   "Level" = c("Family","Genus","Species"),
   stringsAsFactors = FALSE
 )
@@ -1324,14 +1331,72 @@ for(i in 1:nrow(config_tab)){
     bota <- import_bota(list("Year" = 2012))
     config_tab$Ab_tib[[i]] <- rank_ab_tib_bota(bota, config_tab[i,]$Level)
   }
-  else if(config_tab[i,]$Marker %in% c("GH","ITS")){
+  else if(config_tab[i,]$Marker %in% c("GH","ITS","18S")){
     metabarlist <- import_genet(list("Marker" = config_tab[i,]$Marker,"Rar" = TRUE))
     config_tab$Ab_tib[[i]] <- rank_ab_tib_genet(metabarlist, tolower(config_tab[i,]$Level))
   }
 }
 
 
+# 3 plots
+levels <- unique(config_tab$Level)
+
+list_by_level <- lapply(levels, function(lvl){
+  
+  sub_tab <- config_tab[config_tab$Level == lvl, ]
+  
+  # créer une liste nommée avec les markers
+  listes <- setNames(sub_tab$Ab_tib, sub_tab$Marker)
+  
+  return(listes)
+})
+
+names(list_by_level) <- levels
+
+extract_names <- function(df){
+  if("Family" %in% names(df)) return(df$Family)
+  if("family" %in% names(df)) return(df$family)
+  if("Genus" %in% names(df)) return(df$Genus)
+  if("genus" %in% names(df)) return(df$genus)
+  if("Species" %in% names(df)) return(df$Species)
+  if("species" %in% names(df)) return(df$species)
+  return(NULL)
+}
+
+list_by_level_clean <- lapply(list_by_level, function(level_list){
+  
+  lapply(level_list, function(df){
+    x <- extract_names(df)
+    
+    # enlever NA et doublons
+    x <- unique(na.omit(x))
+    
+    return(x)
+  })
+})
+
+library(UpSetR)
+
+set_size <- list("Family"=200, "Genus"=400, "Species"=800)
+
+plot_list <- lapply(names(list_by_level_clean), function(lvl){
+  data_upset <- fromList(list_by_level_clean[[lvl]])
+  
+  upset(data_upset,
+        nsets = ncol(data_upset),
+        order.by = "freq",
+        show.numbers = "yes",
+        set_size.show = TRUE,
+        main.bar.color = "steelblue",
+        sets.bar.color = "gray",
+        mainbar.y.label = paste("Intersections -", lvl),
+        sets.x.label = "Set Size",
+        set_size.scale_max = set_size[[lvl]])
+})
+
+
 ```
+
 
 ### Version DIY
 
