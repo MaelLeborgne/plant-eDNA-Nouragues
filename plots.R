@@ -427,7 +427,8 @@ plot_grid_interp_soft <- function(grid, factor = 2) {
   ggplot(fine, aes(x = x, y = y, fill = krig)) +
     geom_tile() +
     scale_fill_gradientn(
-      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1)
+      colours = turbo(100)
+      #limits = c(0, 30) # Homogene scaling color
     ) +
     coord_fixed() +
     theme_light()+
@@ -435,7 +436,7 @@ plot_grid_interp_soft <- function(grid, factor = 2) {
     # supprimer axes et ticks
     theme(
       legend.margin = ggplot2::margin(t = -10),
-      plot.title = element_text(hjust = 0.5,size = 12, face="bold"),
+      plot.title = element_text(hjust = 0,size = 14, face="bold"),
       plot.margin = ggplot2::margin(0, 20, 0, 20)
     )
 }

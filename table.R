@@ -288,7 +288,7 @@ grid_correlation <- function(row){
     row$b.Metric <- row$Metric_corr  # Bota
     row$g.Metric <- "Reads"          # Génèt
   }
-  else if(row$Metric_corr %in% c("T+","T-","F+","F-","MCC")){
+  else if(row$Metric_corr %in% c("T+","T-","F+","F-","MCC","Sen","Spe")){
     row$b.Metric <- "Presence"   # Bota
     row$g.Metric <- "Presence"   # Génèt
   }
@@ -330,6 +330,8 @@ grid_correlation <- function(row){
                       "T-"    = Tn, # True negative
                       "F+"    = Fp, # True positive
                       "F-"    = Fn, # True negative
+                      "Sen"   = Tp / (Tp + Fn), # Sensitivity
+                      "Spe"   = Tn / (Tn + Fp), # Specificity
                       "MCC"   = mcc(BG$Metric.x, BG$Metric.y),
                       stop(paste0("Unknown Metric :", configs$bota$Metric))
   )
