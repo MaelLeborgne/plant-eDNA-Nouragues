@@ -334,8 +334,7 @@ patch_turbo_family()
 
 ```{r}
 
-p1 <- patch_turbo_species(2012)
-p2 <- patch_turbo_species(2022)
+p1 <- patch_turbo_species()
 
 ```
 
@@ -870,6 +869,43 @@ morpho_corr_matrix()
 # 3. Correlograme Radius
 
 ```{r}
+############ test H1
+
+# Configurations
+config_rad <- expand.grid(
+  "g.Rar" = TRUE,
+  "g.Marker" = c("GH"),
+  "g.Metric" = "H1",
+  "b.Radius" = 10,
+  "b.Year" = c(2012),
+  "b.Metric" = "H1",
+  "Metric_corr" = "OTU",
+  "Level" = c("Species","Family"),
+  "Name" = "All",
+  stringsAsFactors = FALSE
+)
+
+plot_list <- lapply(1:2, function(i){
+  row <- config_rad[i,]
+  configs <- extract_configs(row)
+  
+  # Read Bota grid
+  grid_bota <- grid_read(configs$bota)
+  p1<-plot_grid(grid_bota)
+  
+  # Read Genet grid
+  grid_genet <- grid_read(configs$genet)
+  p2 <- plot_grid(grid_genet)
+  
+  list("bota"=p1,"genet"=p2)
+})
+
+(plot_list[[1]]$bota | plot_list[[2]]$bota)
+
+```
+
+
+```{r}
 # Levels
 levels <- c("Species", "Genus", "Family")
 # Rar
@@ -882,7 +918,7 @@ config_rad <- expand.grid(
   "g.Metric" = "H1",
   "b.Radius" = seq(5,50,5),
   "b.Year" = c(2012),
-  "b.Metric" = "OTU",
+  "b.Metric" = "H1",
   "Metric_corr" = "OTU",
   "Level" = levels,
   stringsAsFactors = FALSE
@@ -890,28 +926,34 @@ config_rad <- expand.grid(
 
 
 # Give common Names for each level
-level_list <- setNames(
-  lapply(levels, function(l) give_common_taxa(Rar = rar, Level = l)),
-  levels
+level_list <- list(
+  "Species" = "All",
+  "Genus" = "All",
+  "Family" = "All"
 )
 
+# setNames(
+#   lapply(levels, function(l) give_common_taxa(Rar = rar, Level = l)),
+#   levels
+# )
+
 # Make correlation table
-tab_rad <- make_cor_table_bota_genet(config_rad, level_list)
+tab_rad_H1 <- make_cor_table_bota_genet(config_rad, level_list)
 
 # View
-view(tab_rad)
+view(tab_rad_H1)
 
 # Save data
-# save( tab_rad,
-#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_OTU_H1.RData")
+# save( tab_rad_H1,
+#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_H1.RData")
 
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_OTU_H1.RData",
-  envir = .GlobalEnv)
+# load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_H1.RData",
+#   envir = .GlobalEnv)
 
 # Plots
-p1 <- plot_correlogramme(tab_rad,"GH")
-p2 <- plot_correlogramme(tab_rad,"ITS")
-p3 <- plot_correlogramme(tab_rad,"18S")
+p1 <- plot_correlogramme(tab_rad_H1,"GH")
+p2 <- plot_correlogramme(tab_rad_H1,"ITS")
+p3 <- plot_correlogramme(tab_rad_H1,"18S")
 
 (p1 | p2 | p3)
 

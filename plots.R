@@ -569,63 +569,97 @@ mono_turbo_species <- function(grid, factor = 2) {
 }
 
 
-patch_turbo_species <- function(Year){
+patch_turbo_species <- function(){
+  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_corr_tot.RData",
+       envir = .GlobalEnv)
   
-  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
-  bota_sp <- import_bota(list("Year" = Year)) %>%
-    pull(Species) %>%
-    unique()
-  common_sp <- intersect(genet_sp, bota_sp)
+  common_sp <- df_corr_tot %>%
+    dplyr::filter(
+      Level %in% c("Species"),
+      g.Marker %in% c("GH"),
+      Metric_corr %in% c("NCI")
+    ) %>%
+    dplyr::select(Name,Correlation) %>%
+    arrange(desc(Correlation))
   
-  plots <- list()
+  # Select species
+  common_sp <- common_sp[c(1,7,12,13),]
   
-  for(i in seq_along(common_sp)) {
-    sp <- common_sp[i]
+  common_sp$plots <- lapply(seq_along(common_sp$Name),function(i){
     
-    config <- list(
+    sp <- common_sp$Name[[i]]
+    corr <- common_sp$Correlation[[i]] %>% round(digits = 3)
+    print(sp)
+    
+    # Import genet grid
+    genet_grid <- grid_read(list(
       "Type" = "genet",
       "Rar" = TRUE,
       "Marker" = "GH",
       "Level" = "Species",
       "Name" = sp,
       "Metric" = "Reads"
-    )
+    ))
     
-    genet_grid <- grid_read(config)
+    # Bota year 1 grid
+    bota_focus1 <- import_bota(list("Year" = 2012)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(2012, levels = c(2012, 2022)))
     
-    bota_focus <- import_bota(list("Year" = Year)) %>%
-      filter(Species == sp)
-    
-    print(sp)
+    # Bota year 2 grid
+    bota_focus2 <- import_bota(list("Year" = 2022)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(2022, levels = c(2012, 2022)))
     
     # générer la heatmap
     p <- mono_turbo_species(genet_grid)
+    
+    # Année 1
+    p <- p +
+      geom_point(
+        data = bota_focus1,
+        aes(x = Xfield, y = Yfield, size = CircCorr/2),
+        color = "red",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      )
+    
+    # Année 2
+    p <- p +
+      geom_point(
+        data = bota_focus2,
+        aes(x = Xfield, y = Yfield, size = CircCorr),
+        color = "orange",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      )+
+      guides(size = "none")
     
     # ajouter indice en haut à gauche
     p <- p +
       annotate(
         "text",
-        x = min(genet_grid$df$x),
+        x = (min(genet_grid$df$x)+max(genet_grid$df$x))/2,
         y = max(genet_grid$df$y + 60),
-        label = paste0("(", i, ")"),
+        label = paste0("R = ", corr),
         fontface = "bold",
-        hjust = 0,
+        hjust = 0.5,
         vjust = 1,
-        size = 5,
+        size = 4,
         color = "black"
       )
-    
-    plots[[i]] <- p
-  }
+  })
   
   # assembler les plots en patchwork
-  wrap_plots(plots, ncol = 5) +
-    plot_annotation(
-      title = Year,
-      theme = theme(
-        plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
-      )
-    )
+  wrap_plots(common_sp$plots, ncol = 5)
+    # plot_annotation(
+    #   title = Year,
+    #   theme = theme(
+    #     plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+    #   )
+    # )
 }
 
 patch_turbo_species_years <- function(Year1, Year2){
@@ -646,7 +680,7 @@ patch_turbo_species_years <- function(Year1, Year2){
     sort()
   
   # # Select species
-  # common_sp <- common_sp[c(10,11,17,18)]
+  # common_sp <- common_sp[c(1,8,12,13)]
   
   # List of mini plots
   plots <- list()
@@ -738,15 +772,16 @@ patch_turbo_species_years <- function(Year1, Year2){
   }
   
   # assembler les plots en patchwork
-  wrap_plots(plots, ncol = 4) +
-    plot_annotation(
-      title = "Comparaison des Inventaires botaniques de 2012 et 2022 avec l'emprunte ADNe",
-      subtitle = "Au niveau specifique pour le marqueur GH",
-      theme = theme(
-        plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
-        plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
-      )
-    ) 
+  wrap_plots(plots, ncol = 4) 
+  # +
+  #   plot_annotation(
+  #     title = "Comparaison des Inventaires botaniques de 2012 et 2022 avec l'emprunte ADNe",
+  #     subtitle = "Au niveau specifique pour le marqueur GH",
+  #     theme = theme(
+  #       plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+  #       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
+  #     )
+  #   ) 
 
 }
 
@@ -1033,25 +1068,15 @@ plot_correlogramme <- function(tab_rad, Marker){
   tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
   tab_rad$Level <- as.factor(tab_rad$Level)
   
-  # Median and quartiles
-  tab_summary <- tab_rad %>%
-    filter(g.Marker == Marker) %>%
-    group_by(b.Radius, Level) %>%
-    summarise(
-      median_cor = median(Correlation, na.rm = TRUE),
-      q1_cor = quantile(Correlation, 0.25, na.rm = TRUE),
-      q3_cor = quantile(Correlation, 0.75, na.rm = TRUE),
-      .groups = "drop"
-    )
+  # # Median and quartiles
+  tab <- tab_rad %>%
+    filter(g.Marker == "ITS") %>%
+    filter(Level == "Family")
   
   # Plot
-  ggplot(tab_summary, aes(x = b.Radius, y = median_cor, color = Level, group = Level)) +
+  ggplot(tab, aes(x = b.Radius, y = Correlation, color = Level, group=Level)) +
     geom_line() +
     geom_point() +
-    geom_errorbar(
-      aes(ymin = q1_cor, ymax = q3_cor),
-      width = 0.1
-    ) +
     labs(x = "Radius (m)", y = "Correlation") +
     theme_bw() +
     geom_hline(

@@ -107,101 +107,66 @@ apply_filters <- function(df,
 
 # ===== BOTA =====
 
-# Generic function to compute bota grid
-bota_grid_engine <- function(G, B, fun_pixel
-                             ){
+bota_build_matrix <- function(G, B) {
   
-  # Configuration
   df <- G$df
   C  <- G$config
   R  <- C$Radius
   
-  # Pixel Loop
+  all_levels <- unique(B[[C$Level]])
+  
+  # matrice vide
+  mat <- matrix(0,
+                nrow = nrow(df),
+                ncol = length(all_levels))
+  
+  colnames(mat) <- all_levels
+  
   for (pixel in 1:nrow(df)) {
     
-    # adresse du pixel
     px <- df$x[pixel]
     py <- df$y[pixel]
     
-    # distance de tout les arbre avec le pixel
     dij <- sqrt((px - B$Xfield)^2 + 
                   (py - B$Yfield)^2)
     
-    if(R == "pixel"){
+    if (R == "pixel") {
       sel <- which(B$Xfield > px-5 &
-                   B$Xfield < px+5 &
-                   B$Yfield > py-5 &
-                   B$Yfield < py+5)
-    }
-    else{
-      # Sélectionner les arbres dans un intervale de distance
+                     B$Xfield < px+5 &
+                     B$Yfield > py-5 &
+                     B$Yfield < py+5)
+    } else {
       sel <- which(dij < R & dij > 0)
     }
     
-    # fill the pixel with fun_pixel
-    if (length(sel) != 0) {
-        df$Metric[pixel] <- fun_pixel(B, sel, dij)
+    if (length(sel) > 0) {
+      counts <- table(B[[C$Level]][sel])
+      mat[pixel, names(counts)] <- counts
     }
   }
-  return(df)
+  
+  return(mat)
 }
 
-# Apply conditions for bota grid calcul
-bota_grid_read <- function(grid, filters=list()){
+bota_grid_read <- function(grid, filters = list()) {
   
-  # Configuration
   G <- grid
   C <- G$config
-  R <- C$Radius
   M <- C$Metric
   
-  # Import bota
   bota <- import_bota(C)
-  
-  # Select Taxa
   B <- select_tax(bota, C$Level, C$Name)
-  # Apply filters
-  B <- rlang::exec(apply_filters, B, !!!filters) 
+  B <- rlang::exec(apply_filters, B, !!!filters)
   
-  # Choix de la métrique botanique via switch
-  grid$df <- switch(M,
-               "Count"         = bota_grid_engine(G, B,
-                                                  function(df, sel, dij){
-                                                    length(sel)
-                                                    }),
-               "NCI"           = bota_grid_engine(G, B,
-                                                  function(df, sel, dij){
-                                                    sum((df$CircCorr[sel]^2) * 
-                                                          exp(-0.25 * dij[sel]),
-                                                        na.rm = TRUE)
-                                                    }),
-               "Presence"         = bota_grid_engine(G, B,
-                                                  function(df, sel, dij){
-                                                    as.integer(length(sel)>0)
-                                                  }),
-               "Basal_Area_m2" = bota_grid_engine(G, B,
-                                                  function(df, sel, dij){
-                                                    sum((bota[sel, ]$CircCorr^2) / (4 * pi * 10000))
-                                                    }),
-               "OTU"           = bota_grid_engine(G, B,
-                                                  function(df, sel, dij){
-                                                    length(unique(df$Species[sel]))
-                                                    }),
-               "Shannon"       = bota_grid_engine(G, B,
-                                               function(df, sel, dij){
-                                                 sp_counts <- table(df$Species[sel])
-                                                 vegan::diversity(sp_counts, index = "shannon")
-                                                 }),
-               "H1"            = bota_grid_engine(G, B,
-                                              function(df, sel, dij){
-                                                sp_counts <- table(df$Species[sel])
-                                                exp(vegan::diversity(sp_counts, index = "shannon"))
-                                              }),
-               # "Gaussian"  = {
-               #   result <- optim_gauss(B)
-               #   bota_grid_Gauss(B, BETA = result$par[1], GAMMA = result$par[2])
-               # },
-               stop("Unknown Metric: ", M)  # gestion d'erreur
+  mat <- bota_build_matrix(G, B)
+  
+  grid$df$Metric <- switch(M,
+                           "Count"    = rowSums(mat),
+                           "Presence" = as.integer(rowSums(mat) > 0),
+                           "OTU"      = rowSums(mat > 0),
+                           "Shannon"  = vegan::diversity(mat, index="shannon"),
+                           "H1"       = exp(vegan::diversity(mat, index="shannon")),
+                           stop("Unknown Metric: ", M)
   )
   
   return(grid)
@@ -297,16 +262,29 @@ genet_grid_read <- function(grid, filters = list()){
   # Select Reads from OTU_id
   reads_filtered <- genet$reads[, colnames(genet$reads) %in% otu_list, drop = FALSE]
   
+  # Grouper par OTU de même C$Level == C$Name
+  # Créer le vecteur d'espèces aligné avec les lignes
+  tax_names <- genet$motus[[tolower(C$Level)]][
+    match(colnames(reads_filtered), genet$motus$id)
+  ]
+  # Gestion des NA
+  valid <- !is.na(tax_names)
+  # Agréger par espèce
+  reads_tax <- t(rowsum(
+    t(reads_filtered[, valid]),
+    group = tax_names[valid]
+  ))
+  
   # Create dataframe for calcul
-  metric_df <- data.frame(sample_loc = rownames(reads_filtered))
+  metric_df <- data.frame(sample_loc = rownames(reads_tax))
   
   # Compute the metric
   metric_df$Metric <- switch(M,
-                    "Reads"         = rowSums(reads_filtered),
-                    "OTU"           = rowSums(reads_filtered > 0),
-                    "Presence"      = as.integer(rowSums(reads_filtered > 0) > 0),
-                    "Shannon"       = diversity(reads_filtered, index = "shannon"),
-                    "H1"            = exp(diversity(reads_filtered, index = "shannon")),
+                    "Reads"         = rowSums(reads_tax),
+                    "OTU"           = rowSums(reads_tax > 0),
+                    "Presence"      = as.integer(rowSums(reads_tax > 0) > 0),
+                    "Shannon"       = diversity(reads_tax, index = "shannon"),
+                    "H1"            = exp(diversity(reads_tax, index = "shannon")),
                     stop("Unknown Metric: ", M)  # gestion d'erreur
   )
   
