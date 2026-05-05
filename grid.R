@@ -144,6 +144,7 @@ bota_build_matrix <- function(G, B) {
       mat[pixel, names(counts)] <- counts
     }
   }
+  row.names(mat) <- df$sample_loc
   
   return(mat)
 }

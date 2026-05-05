@@ -1070,8 +1070,7 @@ plot_correlogramme <- function(tab_rad, Marker){
   
   # # Median and quartiles
   tab <- tab_rad %>%
-    filter(g.Marker == "ITS") %>%
-    filter(Level == "Family")
+    filter(g.Marker == Marker)
   
   # Plot
   ggplot(tab, aes(x = b.Radius, y = Correlation, color = Level, group=Level)) +

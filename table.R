@@ -297,7 +297,7 @@ grid_correlation <- function(row){
   configs <- extract_configs(row)
   
   # Read Bota grid
-  grid_bota_2 <- grid_read(configs$bota)
+  grid_bota <- grid_read(configs$bota)
   B <- grid_bota$df
   
   # Read Genet grid

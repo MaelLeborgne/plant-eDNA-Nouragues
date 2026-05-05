@@ -908,12 +908,10 @@ plot_list <- lapply(1:2, function(i){
 ```{r}
 # Levels
 levels <- c("Species", "Genus", "Family")
-# Rar
-rar <- TRUE 
 
 # Configurations
 config_rad <- expand.grid(
-  "g.Rar" = rar,
+  "g.Rar" = TRUE,
   "g.Marker" = c("GH","ITS","18S"),
   "g.Metric" = "H1",
   "b.Radius" = seq(5,50,5),
@@ -931,11 +929,6 @@ level_list <- list(
   "Genus" = "All",
   "Family" = "All"
 )
-
-# setNames(
-#   lapply(levels, function(l) give_common_taxa(Rar = rar, Level = l)),
-#   levels
-# )
 
 # Make correlation table
 tab_rad_H1 <- make_cor_table_bota_genet(config_rad, level_list)
@@ -1939,6 +1932,7 @@ vec_list <- lapply(c("GH","ITS"), function(m){
 #   # Use a dataframe to name the rows
 #   as.data.frame ->
 #   dfAbdP6SubPlots
+
 # # Prepare a metacommunity: row names
 # rownames(dfAbdP6SubPlots) <- dfAbdP6SubPlots$spName
 # # Delete the column with species names
