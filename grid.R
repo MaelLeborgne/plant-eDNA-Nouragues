@@ -173,71 +173,6 @@ bota_grid_read <- function(grid, filters = list()) {
   return(grid)
 }
 
-# # Gaussian
-# bota_grid_Gauss <- function(bota_focus, BETA, GAMMA, R = 20, user_norm=FALSE){
-#   # Give calcul to generic function
-#   bota_grid_engine(
-#     bota_focus,
-#     R = R,
-#     var_name = "Gaussian",
-#     normalize = user_norm,
-#     fun_pixel = function(df, sel, dij){
-#       sum(
-#         (pi*(df$CircCorr[sel]/2)^2) *
-#           exp(-BETA * dij[sel]^GAMMA),
-#         na.rm = TRUE
-#       )
-#     }
-#   )
-# }
-# 
-# ### Fonction to minimize (gauss)
-# rss_function <- function(par, ADNe_obs) {
-#   # Prameters
-#   beta <- par[1]
-#   gamma <- par[2]
-# 
-#   # Prediction
-#   pred_grid <- bota_grid_Gauss(beta, gamma)
-# 
-#   # Residuals
-#   resid <- ADNe_obs - pred_grid$density
-# 
-#   # RSS
-#   print(sum(resid^2))
-#   print(beta)
-#   sum(resid^2)
-#   }
-# 
-# ### Launch Optimization (gauss)
-# optim_gauss <- function(genet_grid) {
-#   res <- optim(
-#     par = c(0.2,1),
-#     fn = rss_function,
-#     ADNe_obs = genet_grid$density,
-#     method = "L-BFGS-B",
-#     lower = c(0,0),  # logical constraint (biological)
-#   )
-#   return(res)
-# }
-
-# bota_grid_OTU_matrice <- function(bota_focus, R = 15){
-#   # Give calcul to generic function
-#   bota_grid_engine(
-#     bota_focus,
-#     R = R,
-#     var_name = "OTU",
-#     normalize = FALSE,
-#     return_comm = TRUE, # Matrice
-#     fun_pixel = function(df, sel, dij){
-#       table(df$Species[sel])
-#     }
-#   )
-# }
-
-
-
-
 # ==== GENET READ ====
 
 genet_grid_read <- function(grid, filters = list()){
@@ -263,18 +198,25 @@ genet_grid_read <- function(grid, filters = list()){
   # Select Reads from OTU_id
   reads_filtered <- genet$reads[, colnames(genet$reads) %in% otu_list, drop = FALSE]
   
-  # Grouper par OTU de même C$Level == C$Name
-  # Créer le vecteur d'espèces aligné avec les lignes
-  tax_names <- genet$motus[[tolower(C$Level)]][
-    match(colnames(reads_filtered), genet$motus$id)
-  ]
-  # Gestion des NA
-  valid <- !is.na(tax_names)
-  # Agréger par espèce
-  reads_tax <- t(rowsum(
-    t(reads_filtered[, valid]),
-    group = tax_names[valid]
-  ))
+  # Init
+  reads_tax <- reads_filtered
+  # SEULEMENT POUR SHANNON ET H1 (Genus and Family levels)
+  if(M %in% c("Shannon","H1") & C$Level != "Species" & C$Marker != "18S"){
+    # Grouper par OTU de même C$Level == C$Name
+    
+    # Créer le vecteur d'espèces aligné avec les lignes
+    tax_names <- genet$motus[[tolower(C$Level)]][
+      match(colnames(reads_filtered), genet$motus$id)
+    ]
+    # Gestion des NA
+    valid <- !is.na(tax_names)
+    
+    # Agréger par Name
+    reads_tax <- t(rowsum(
+      t(reads_filtered[, valid]),
+      group = tax_names[valid]
+    ))
+  }
   
   # Create dataframe for calcul
   metric_df <- data.frame(sample_loc = rownames(reads_tax))

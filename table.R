@@ -63,12 +63,12 @@ summary_ab_rel <- function(config){
   config_all <- config
   config_all$Name <- "All"
   
-  # filter list
+  # Filter list
   filters <- filter_select_level(config$Level) 
   filters$filter_monocot <- FALSE
   
   # Read grid All
-  grid_all <- grid_read(config_all, filters)
+  grid_all <- grid_read(config_all)
   total <- sum(grid_all$df$Metric)
   
   # Récupère tous les noms du clade
@@ -323,9 +323,9 @@ grid_correlation <- function(row){
   
   # Select Final metric
   grid_corr <- switch(row$Metric_corr,
-                      "Count" = cor(B$Metric, G$Metric),
-                      "NCI"   = cor(B$Metric, G$Metric),
-                      "OTU"   = cor(B$Metric, G$Metric),
+                      "Count" = cor(B$Metric, G$Metric, method="spearman"),
+                      "NCI"   = cor(B$Metric, G$Metric, method="spearman"),
+                      "OTU"   = cor(B$Metric, G$Metric, method="spearman"),
                       "T+"    = Tp, # True positive
                       "T-"    = Tn, # True negative
                       "F+"    = Fp, # True positive

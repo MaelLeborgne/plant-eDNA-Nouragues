@@ -412,7 +412,7 @@ plot_grid_interp <- function(grid, factor = 2) {
 }
 
 # Fonction de plot  with soft theme
-plot_grid_interp_soft <- function(grid, factor = 2) {
+plot_grid_interp_soft <- function(grid, factor = 3) {
   
   fine <- interpolate_grid_2D(grid, factor)
   
