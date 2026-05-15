@@ -97,6 +97,303 @@ grid <- grid_read(grid_config)
 plot_grid(grid)
 ```
 
+
+
+## Presence / Absence
+
+```{r}
+
+# Bota
+config <- list(
+  Level = "Family",
+  Name = "Fabaceae",
+  Type = "bota",
+  Year = "2012",
+  Radius = 10,
+  Metric = "Presence")
+
+bota <- import_bota(config)
+
+grid <- grid_read(config)
+
+plot_grid(grid)
+
+# Genet
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH",
+  Level = "Species",
+  Name = "Salvia textitlana",
+  Metric = "Presence")
+
+genet_gh <- import_genet(config)
+
+grid <- grid_read(config)
+
+plot_grid(grid)
+```
+
+## Venn diagramm
+
+### External datasets coverage
+
+```{r}
+
+# Morpho
+morpho <- import_plants_morpho() %>%
+  pull(Species)
+
+# GH
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH")
+
+g_gh <- import_genet(config)$motus %>%
+  dplyr::filter(!is.na(species)) %>%
+  pull(species)
+
+# ITS
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "ITS")
+
+g_its <- import_genet(config)$motus %>%
+  dplyr::filter(!is.na(species)) %>%
+  pull(species)
+
+# 18S
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "18S")
+
+g_18s <- import_genet(config)$motus %>%
+  dplyr::filter(!is.na(species)) %>%
+  pull(species)
+
+# Bota
+bota <- import_bota(list(Year=2012)) %>%
+  dplyr::filter(!is.na(Species)) %>%
+  dplyr::distinct(Species, .keep_all = TRUE) %>%
+  pull(Species)
+
+# Nouragues
+nour <- import_plants_nouragues() %>%
+  pull(species)
+
+length(morpho)
+length(g_gh)
+length(g_its)
+length(g_18s)
+length(bota)
+length(nour)
+
+# Diagramme de Venn
+
+library(UpSetR)
+
+# créer une liste
+listes <- list(
+#  M = morpho,
+  GH = g_gh,
+  ITS = g_its,
+  S18 = g_18s,
+  B = bota,
+  N = nour
+)
+
+# convertir en format UpSet
+data_upset <- fromList(listes)
+
+# plot
+
+UpSetR::upset(data_upset,
+      nsets = ncol(data_upset),
+      order.by = "freq",
+      show.numbers = "yes",
+      set_size.show = TRUE,
+      set_size.scale_max = 3000) 
+
+
+
+```
+
+### Markers coverage : Family, Genus, Species
+
+```{r}
+
+# ---- Datasets ----
+
+config_tab <- expand.grid(
+  "Marker" = c("Bota","GH","ITS","18S","REF"),
+  "Level" = c("Family","Genus","Species"),
+  stringsAsFactors = FALSE
+)
+
+# ---- Fill Community Composition ----
+
+for(i in 1:nrow(config_tab)){
+  
+  print(i)
+  L <- config_tab[i,]$Level
+  M <- config_tab[i,]$Marker
+  
+  if(M == "Bota"){
+    df <- import_bota(list("Year" = 2012))
+    config_tab$Ab_tib[[i]] <- rank_ab_tib_bota(df, L)
+  }
+  else if(M %in% c("GH","ITS","18S")){
+    df <- import_genet(list("Marker" = config_tab[i,]$Marker,"Rar" = TRUE))
+    config_tab$Ab_tib[[i]] <- rank_ab_tib_genet(df, tolower(L))
+  }
+  else if(M %in% c("REF")){
+    config_tab$Ab_tib[[i]] <- import_plants_nouragues() %>%
+      pull(.data[[tolower(L)]]) %>%
+      unique()
+  }
+}
+
+# 3 plots
+levels <- unique(config_tab$Level)
+
+list_by_level <- lapply(levels, function(lvl){
+  
+  sub_tab <- config_tab[config_tab$Level == lvl, ]
+  
+  # créer une liste nommée avec les markers
+  listes <- setNames(sub_tab$Ab_tib, sub_tab$Marker)
+  
+  return(listes)
+})
+
+names(list_by_level) <- levels
+
+extract_names <- function(df){
+  if("Family" %in% names(df)) return(df$Family)
+  if("family" %in% names(df)) return(df$family)
+  if("Genus" %in% names(df)) return(df$Genus)
+  if("genus" %in% names(df)) return(df$genus)
+  if("Species" %in% names(df)) return(df$Species)
+  if("species" %in% names(df)) return(df$species)
+  return(df)
+}
+
+list_by_level_clean <- lapply(list_by_level, function(level_list){
+  
+  lapply(level_list, function(df){
+    x <- extract_names(df)
+    
+    # enlever NA et doublons
+    x <- unique(na.omit(x))
+    
+    return(x)
+  })
+})
+
+
+# ---- Plots ----
+
+library(UpSetR)
+
+set_size <- list("Family"=200, "Genus"=600, "Species"=1600)
+
+plot_list <- lapply(names(list_by_level_clean), function(lvl){
+  data_upset <- fromList(list_by_level_clean[[lvl]])
+  
+  upset(data_upset,
+        nsets = ncol(data_upset),
+        order.by = "freq",
+        show.numbers = "yes",
+        set_size.show = TRUE,
+        main.bar.color = "steelblue",
+        sets.bar.color = "gray",
+        mainbar.y.label = paste("Intersections -", lvl),
+        sets.x.label = "Set Size",
+        set_size.scale_max = set_size[[lvl]])
+})
+
+
+```
+
+### B,G,I,S,N cross f,g,s
+
+```{r}
+
+Level <- "Species"
+
+# GH
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "GH")
+
+g_gh <- import_genet(config)$motus %>%
+  dplyr::filter(!is.na(species)) %>%
+  pull(tolower(Level)) %>%
+  unique()
+
+# ITS
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "ITS")
+
+g_its <- import_genet(config)$motus %>%
+  dplyr::filter(!is.na(species)) %>%
+  pull(tolower(Level))
+
+# 18S
+config <- list(
+  Type = "genet",
+  Rar = FALSE,
+  Marker = "18S")
+
+g_18s <- import_genet(config)$motus %>%
+  dplyr::filter(!is.na(species)) %>%
+  pull(tolower(Level))
+
+# Bota
+bota <- import_bota(list(Year=2012)) %>%
+  dplyr::filter(!is.na(Species)) %>%
+  dplyr::distinct(Species, .keep_all = TRUE) %>%
+  pull(Level)
+
+# Nouragues
+nour <- import_plants_nouragues() %>%
+  pull(tolower(Level))
+
+# Diagramme de Venn
+
+library(UpSetR)
+
+# créer une liste
+listes <- list(
+  GH = g_gh,
+  ITS = g_its,
+  S18 = g_18s,
+  B = bota,
+  N = nour
+)
+
+# convertir en format UpSet
+data_upset <- fromList(listes)
+
+# plot
+
+UpSetR::upset(data_upset,
+      nsets = ncol(data_upset),
+      order.by = "freq",
+      show.numbers = "yes",
+      set_size.show = TRUE,
+      set_size.scale_max = 3000) 
+
+```
+
+
+# 1. Patch
 ## Grid Bota (all Metric)
 
 ```{r}
@@ -201,136 +498,62 @@ Wrap <- wrap_plots(all_plots, ncol = 4) +
 
 ```
 
-## Presence / Absence
+## Abiotic Pannel
 
 ```{r}
 
-# Bota
-config <- list(
-  Level = "Family",
-  Name = "Fabaceae",
-  Type = "bota",
-  Year = "2012",
-  Radius = 10,
-  Metric = "Presence")
+# Import
+abiotic <- import_abiotic() %>%
+  dplyr::select(-c(x,y))
 
-bota <- import_bota(config)
+# Abiotic variables
+abiotic_vars <- colnames(abiotic) 
 
-grid <- grid_read(config)
+# Plot list
+plot_list <- list()
 
-plot_grid(grid)
+# Plot loop
+for(i in 1:length(abiotic_vars)){
+  
+  # Metric
+  metric <- abiotic_vars[[i]]
+  print(metric)
+  
+  # Config
+  config <- list(
+    Type = "abiotic",
+    Metric = metric)
+  
+  # Grid
+  grid <- grid_read(config)
+  
+  # Plot
+  plot_list[[i]] <- plot_grid(grid) +
+  theme_void() +
+  labs(caption = grid$config$Name) +
+    theme(
+      plot.caption = ggplot2::element_text(
+        hjust = 0.5,   # centré
+        size = 9,
+        face = "bold.italic"
+      )
+    )
+  
+}
 
-# Genet
-config <- list(
-  Type = "genet",
-  Rar = FALSE,
-  Marker = "GH",
-  Level = "Species",
-  Name = "Salvia textitlana",
-  Metric = "Presence")
-
-genet_gh <- import_genet(config)
-
-grid <- grid_read(config)
-
-plot_grid(grid)
-```
-
-## Venn diagramm
-
-```{r}
-
-# Morpho
-morpho <- import_plants_morpho() %>%
-  pull(Species)
-
-# GH
-config <- list(
-  Type = "genet",
-  Rar = FALSE,
-  Marker = "GH")
-
-g_gh <- import_genet(config)$motus %>%
-  dplyr::filter(!is.na(species)) %>%
-  pull(species)
-
-# ITS
-config <- list(
-  Type = "genet",
-  Rar = FALSE,
-  Marker = "ITS")
-
-g_its <- import_genet(config)$motus %>%
-  dplyr::filter(!is.na(species)) %>%
-  pull(species)
-
-# 18S
-config <- list(
-  Type = "genet",
-  Rar = FALSE,
-  Marker = "18S")
-
-g_18s <- import_genet(config)$motus %>%
-  dplyr::filter(!is.na(species)) %>%
-  pull(species)
-
-# Bota
-bota <- import_bota(list(Year=2012)) %>%
-  dplyr::filter(!is.na(Species)) %>%
-  dplyr::distinct(Species, .keep_all = TRUE) %>%
-  pull(Species)
-
-# Nouragues
-nour <- import_plants_nouragues() %>%
-  pull(species)
-
-length(morpho)
-length(g_gh)
-length(g_its)
-length(g_18s)
-length(bota)
-length(nour)
-
-# Diagramme de Venn
-
-library(UpSetR)
-
-# créer une liste
-listes <- list(
-  M = morpho,
-  GH = g_gh,
-  ITS = g_its,
-  S18 = g_18s,
-  B = bota,
-  N = nour
-)
-
-# convertir en format UpSet
-data_upset <- fromList(listes)
-
-# plot
-
-UpSetR::upset(data_upset,
-      nsets = ncol(data_upset),
-      order.by = "freq",
-      show.numbers = "yes",
-      set_size.show = TRUE,
-      set_size.scale_max = 3000) 
-
-
+wrap_plots(plot_list, ncol = 10)
 
 ```
 
-
-# 1. Patch
-## Family
+## Family Patch
 
 ```{r}
 
 patch_turbo_family()
 
 ```
-## Species
+
+## Species Patch
 
 ```{r}
 
@@ -338,8 +561,16 @@ p1 <- patch_turbo_species()
 
 ```
 
+## Species Year exemples
 
-## Give names
+```{r}
+
+p <- patch_turbo_species_ex(N_patch = 4)
+
+```
+
+
+### Give names
 
 ```{r}
 config <- list(
@@ -360,85 +591,71 @@ config <- list(
 give_level_names(config)
 ```
 
+## Botanical Model (Count,NCI,I/O)
+
+```{r}
+
+# Configurations
+bota_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("Presence", "Count"),
+  Year = "2012",
+  Radius = 20)
+
+nci_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("NCI"),
+  Year = "2012",
+  Radius = 20,
+  Alpha = 1.5,
+  Beta = 0.1)
+
+genet_conf <- list(  
+  Type = "genet",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = "Reads",
+  Rar = TRUE,
+  Marker = c("GH"))
+
+config_tab <- bind_rows(list(bota_conf, nci_conf, genet_conf))
+
+# Generate grids
+grid_list <- build_grids(config_tab)
+
+titles <- list(
+  "Presence / Absence",
+  "Count (R=20)",
+  expression(bold(NCI~"("~alpha==1.5*","~beta==0.1~")")),
+  "GH Reads"
+)
+
+# Generate plots
+plot_list <- Map(function(grid, title){
+  plot_grid(grid, stems = TRUE) +
+    labs(title = title)
+}, grid_list, titles)
+
+# Wrap
+wrap_plots(plot_list, ncol = 4)
+
+```
+
+
+
+
 
 # I. TAXONOMY DETECTION
 ## 1. Rank / Abundance Curve
 
+### Classical (3 plots)
 ```{r}
 
 library("entropart")
-
-# TIBLE
-rank_ab_tib_bota <- function(df, Level){
-  df %>% 
-    group_by(.data[[Level]]) %>% 
-    summarize(Abundance = n(), Dominance = n()/nrow(df)) %>%
-    arrange(desc(Abundance)) %>%
-    mutate(Rank = 1:length(Abundance))
-}
-
-rank_ab_tib_bota_BA <- function(df, Level){
-  df %>% 
-    group_by(.data[[Level]]) %>% 
-    summarize(Abundance = sum(pi*(CircCorr/(2*pi))^2), Dominance = n()/nrow(df)) %>%
-    arrange(desc(Abundance)) %>%
-    mutate(Rank = 1:length(Abundance))
-}
-
-rank_ab_tib_genet <- function(df, Level){
-  
-  Reads <- colSums(df$reads)
-  as.data.frame(Reads) -> Reads
-  Reads$id <- row.names(Reads)
-  
-  left_join(df$motus, Reads, by = "id") %>%
-    dplyr::filter(!is.na(.data[[Level]])) %>%
-    group_by(.data[[Level]]) %>%
-    summarise(Reads = sum(Reads))%>%
-    ungroup() %>%
-    mutate(Dominance = Reads / sum(Reads)) %>%
-    arrange(desc(Reads)) %>%
-    mutate(Rank = row_number())
-}
-
-# VECTOR
-rank_ab_vec_bota <- function(Ab_tib, Level){
-
-  # Build a named vector
-  Ab_vec <- Ab_tib$Abundance
-  names(Ab_vec) <- Ab_tib[[Level]]
-  
-  # Vector of abundances
-  Ab_vec %>% as.AbdVector()
-}
-
-rank_ab_vec_genet <- function(Ab_tib, Level){
-  # Build a named vector
-  Ab_vec <- Ab_tib$Reads
-  names(Ab_vec) <- Ab_tib[[Level]]
-  
-  # Vector of abundances
-  Ab_vec %>% as.AbdVector()
-}
-
-# Whittaker plot
-plot_Whittaker_bota <- function(df, Level){
-  Ab_tib <- rank_ab_tib_bota(df, Level)
-  Ab_vec <- rank_ab_vec_bota(Ab_tib, Level)
-  
-  plot(Ab_vec, Distribution = "lnorm", main = "Bota")
-  param <- RAClnorm(Ab_vec)
-  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Abundance),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
-}
-
-plot_Whittaker_genet <- function(df, Level){
-  Ab_tib <- rank_ab_tib_genet(df, Level)
-  Ab_vec <- rank_ab_vec_genet(Ab_tib, Level)
-  
-  plot(Ab_vec, Distribution = "lnorm", ylab = "Reads")
-  param <- RAClnorm(Ab_vec)
-  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
-}
 
 # Plot list
 par(mfrow = c(1,3))
@@ -459,92 +676,7 @@ plot_list <- lapply(c("GH","ITS"), function(m){
 
 ```
 
-### Venn diagramm
-
-```{r}
-
-# Tib list
-
-config_tab <- expand.grid(
-  "Marker" = c("Bota","GH","ITS","18S"),
-  "Level" = c("Family","Genus","Species"),
-  stringsAsFactors = FALSE
-)
-
-for(i in 1:nrow(config_tab)){
-  print(i)
-  if(config_tab[i,]$Marker == "Bota"){
-    bota <- import_bota(list("Year" = 2012))
-    config_tab$Ab_tib[[i]] <- rank_ab_tib_bota(bota, config_tab[i,]$Level)
-  }
-  else if(config_tab[i,]$Marker %in% c("GH","ITS","18S")){
-    metabarlist <- import_genet(list("Marker" = config_tab[i,]$Marker,"Rar" = TRUE))
-    config_tab$Ab_tib[[i]] <- rank_ab_tib_genet(metabarlist, tolower(config_tab[i,]$Level))
-  }
-}
-
-
-# 3 plots
-levels <- unique(config_tab$Level)
-
-list_by_level <- lapply(levels, function(lvl){
-  
-  sub_tab <- config_tab[config_tab$Level == lvl, ]
-  
-  # créer une liste nommée avec les markers
-  listes <- setNames(sub_tab$Ab_tib, sub_tab$Marker)
-  
-  return(listes)
-})
-
-names(list_by_level) <- levels
-
-extract_names <- function(df){
-  if("Family" %in% names(df)) return(df$Family)
-  if("family" %in% names(df)) return(df$family)
-  if("Genus" %in% names(df)) return(df$Genus)
-  if("genus" %in% names(df)) return(df$genus)
-  if("Species" %in% names(df)) return(df$Species)
-  if("species" %in% names(df)) return(df$species)
-  return(NULL)
-}
-
-list_by_level_clean <- lapply(list_by_level, function(level_list){
-  
-  lapply(level_list, function(df){
-    x <- extract_names(df)
-    
-    # enlever NA et doublons
-    x <- unique(na.omit(x))
-    
-    return(x)
-  })
-})
-
-library(UpSetR)
-
-set_size <- list("Family"=200, "Genus"=400, "Species"=800)
-
-plot_list <- lapply(names(list_by_level_clean), function(lvl){
-  data_upset <- fromList(list_by_level_clean[[lvl]])
-  
-  upset(data_upset,
-        nsets = ncol(data_upset),
-        order.by = "freq",
-        show.numbers = "yes",
-        set_size.show = TRUE,
-        main.bar.color = "steelblue",
-        sets.bar.color = "gray",
-        mainbar.y.label = paste("Intersections -", lvl),
-        sets.x.label = "Set Size",
-        set_size.scale_max = set_size[[lvl]])
-})
-
-
-```
-
-
-### Version DIY
+### Version DIY (Same plot, normalized)
 
 ```{r}
 
@@ -645,7 +777,51 @@ p1 | p2
 ```
 
 
-## 3. Tables d'Abondance realtives
+## 3. Growth Types
+
+```{r}
+growth <- import_plants_nouragues()
+
+# General table
+tab_all_growth <- growth %>%
+    summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(across(starts_with("stat."), ~ round(.x / rowSums(across(starts_with("stat."))) * 100, digits = 2))) %>%
+    rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
+  t() %>%
+  as.data.frame() %>%
+  arrange(desc(V1))
+
+view(tab_all_growth)
+
+# By family
+tab_family_growth <- growth %>%
+  group_by(family) %>%
+  summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(across(starts_with("stat."), ~ .x / rowSums(across(starts_with("stat."))) * 100)) %>%
+    rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) 
+
+view(tab_family_growth)
+
+# Nourague reference for families %
+tab_family_ref <- growth %>%
+  group_by(family) %>%
+  summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE)))%>%
+  mutate(
+    total = rowSums(across(starts_with("stat.")), na.rm = TRUE)
+  ) %>%
+  dplyr::select(family,total) %>%
+  ungroup() %>%
+  mutate(
+    total = (total / sum(total)) * 100
+  ) %>%
+  arrange(desc(total))
+
+view(tab_family_ref)
+
+```
+
+
+## 4. Tables d'Abondance realtives
 
 ### A. Create
 
@@ -777,7 +953,7 @@ df_list <- lapply(seq_along(source_indices), function(i) {
 
 ```
 
-### C. Plots Ab_rel et Growth_form
+### C. RICHNESS and GROWTH
 
 ```{r}
 
@@ -873,7 +1049,112 @@ ggplot(compare, aes(x = genet, y = bota)) +
 
 ```
 
-# II. DIVERSITY PATTERNS
+## 5. Model growth detectability
+
+```{r}
+
+# By family
+tab_family_growth <- growth %>%
+  group_by(family) %>%
+  summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(across(starts_with("stat."), ~ .x / rowSums(across(starts_with("stat."))) * 100)) %>%
+    rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
+  rename(Clade = family)
+
+view(tab_family_growth)
+
+# Nourague reference for families %
+tab_family_ref <- growth %>%
+  group_by(family) %>%
+  summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE)))%>%
+  mutate(
+    total = rowSums(across(starts_with("stat.")), na.rm = TRUE)
+  ) %>%
+  dplyr::select(family,total) %>%
+  ungroup() %>%
+  mutate(
+    total = (total / sum(total)) * 100
+  ) %>%
+  arrange(desc(total)) %>%
+  rename(Clade = family) %>%
+  rename(REF = total)
+
+view(tab_family_ref)
+
+# Groupement des données
+
+df_list <- list(
+  tab_family_ref,
+  df_ab_rel_Richness$Result[[2]] %>% rename(GH = Metric),
+  df_ab_rel_Richness$Result[[4]] %>% rename(ITS = Metric),
+  df_ab_rel_Richness$Result[[6]] %>% rename(`18S` = Metric),
+  df_ab_rel_Richness$Result[[7]] %>% rename(BOTA = Metric),
+  tab_family_growth
+)
+
+out <- reduce(df_list, full_join, by = "Clade") %>%
+  replace(is.na(.), 0)
+
+# Test de sur-/sous-représentation
+
+df_long <- out %>%
+  pivot_longer(
+    cols = c(REF, GH, ITS, `18S`, BOTA),
+    names_to = "inventory",
+    values_to = "i"
+  )
+
+ref <- df_long %>%
+  dplyr::filter(inventory == "REF") %>%
+  dplyr::select(Clade, i_ref = i)
+
+df_lr <- df_long %>%
+  dplyr::filter(inventory != "REF") %>%
+  dplyr::left_join(ref, by = "Clade") %>%
+  dplyr::mutate(log_ratio = i/i_ref)#log((i + 1e-7) / (i_ref + 1e-7)))
+
+
+df_growth <- df_lr %>%
+  pivot_longer(
+    cols = c(terrestrial, tree, treelet, liana, shrub, vine, epilithic, parasite, hemi.epiphyte),
+    names_to = "growth",
+    values_to = "g"
+  )
+
+df_bias <- df_growth %>%
+  group_by(inventory, growth) %>%
+  summarise(
+    bias = weighted.mean(log_ratio, g, na.rm = TRUE)
+  )
+
+bias_mat <- df_bias %>%
+  pivot_wider(
+    names_from = growth,
+    values_from = bias
+  )
+
+df_bias %>%
+  ggplot(aes(x = growth, y = inventory, fill = bias)) +
+  geom_tile() +
+  geom_text(aes(label = round(bias, 2)), size = 4) +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 1,
+    limits = c(0, max(df_bias$bias, na.rm = TRUE))
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
+    axis.text.y.left = element_markdown(face = "bold"),
+  ) +
+  labs(x = "Growth form", y = "Inventory", fill = "Ratio (inv/ref)")
+
+```
+
+
+# III. DIVERSITY PATTERNS
 
 ## 1. Correlograme Radius
 
@@ -930,10 +1211,10 @@ levels <- c("Species", "Genus", "Family")
 config_rad <- expand.grid(
   "g.Rar" = TRUE,
   "g.Marker" = c("GH","ITS"),
-  "g.Metric" = "Shannon",
+  "g.Metric" = "H1",
   "b.Radius" = seq(5,50,5),
   "b.Year" = c(2012),
-  "b.Metric" = "OTU",
+  "b.Metric" = "H1",
   "Metric_corr" = "OTU",
   "Level" = levels,
   stringsAsFactors = FALSE
@@ -979,7 +1260,7 @@ p3 <- plot_correlogramme(tab_rad_H1,"18S")
 bota_H1_grid <- grid_read(list(
   Type = "bota",
   Year = "2012",
-  Radius = "pixel",
+  Radius = 10,
   Metric = "H1",
   Level = "Species",
   Name = "All"))
@@ -1003,18 +1284,18 @@ ITS_H1_grid <- grid_read(list(
   "Name"="All"))
 
 p1 <- plot_grid_interp_soft(bota_H1_grid) +
-  labs(title = "(a)", caption = "", fill = "Shannon") 
+  labs(title = "(a)", caption = "", fill = "H1") 
 p2 <- plot_grid_interp_soft(GH_H1_grid) +
-  labs(title = "(b)", caption = "", fill = "Shannon")
+  labs(title = "(b)", caption = "", fill = "H1")
 p3 <- plot_grid_interp_soft(ITS_H1_grid) + 
-  labs(title = "(c)", caption = "", fill = "Shannon")
+  labs(title = "(c)", caption = "", fill = "H1")
 
 p1 + p2 + p3
 
 
-cor.test(bota_H1_grid$df$Metric, GH_H1_grid$df$Metric, method="spearman")
-cor.test(bota_H1_grid$df$Metric, ITS_H1_grid$df$Metric, method="spearman")
-cor.test(GH_H1_grid$df$Metric, ITS_H1_grid$df$Metric, method="spearman")
+cor(bota_H1_grid$df$Metric, GH_H1_grid$df$Metric, method="spearman")
+cor(bota_H1_grid$df$Metric, ITS_H1_grid$df$Metric, method="spearman")
+cor(GH_H1_grid$df$Metric, ITS_H1_grid$df$Metric, method="spearman")
 
 ```
 
@@ -1056,63 +1337,62 @@ rand_for_IncMSE <- function(data_pixel){
   return(list(p, rf_model, data_pixel))
 }
 
-# Import data
+# -- Import Abiotic --
 abiotic <- import_abiotic() %>%
   dplyr::select(x,y,light,canop12,topo,wetness,Ca,Al,K,C,N) %>%
   mutate(CNratio = C / N) %>%
   dplyr::select(-c(C,N))
 
-genet <- GH_H1_grid$df
-bota <- bota_H1_grid$df
-
-
 # -- Bota --
-data_pixel_bota <- inner_join(bota, abiotic, by = c("x","y"))
+data_pixel_bota <- inner_join(bota_H1_grid$df, abiotic, by = c("x","y"))
 res_bota <- rand_for_IncMSE(data_pixel_bota)
+
 p4 <- res_bota[[1]] +
   labs(y = "%IncMSE", x = "", title = "(d)")
 
 # -- GH ---
-data_pixel_genet <- inner_join(genet, abiotic, by = c("x","y"))
-res_genet <- rand_for_IncMSE(data_pixel_genet)
-p5 <- res_genet[[1]] +
+data_pixel_GH <- inner_join(GH_H1_grid$df, abiotic, by = c("x","y"))
+res_GH <- rand_for_IncMSE(data_pixel_GH)
+
+p5 <- res_GH[[1]] +
   labs(y = "%IncMSE", x = "", title = "(e)")
 
 # -- ITS ---
-data_pixel_genet <- inner_join(genet, abiotic, by = c("x","y"))
-res_genet <- rand_for_IncMSE(data_pixel_genet)
-p5 <- res_genet[[1]] +
+data_pixel_ITS <- inner_join(ITS_H1_grid$df, abiotic, by = c("x","y"))
+res_ITS <- rand_for_IncMSE(data_pixel_ITS)
+
+p6 <- res_ITS[[1]] +
   labs(y = "%IncMSE", x = "", title = "(f)")
 
 # Multiplot
 (p1 | p2 | p3) / (p4 | p5 | p6)
 
-# --- Impacte d'une variable ---
-library(iml)
-
-plot_res_by_features <- function(res){
-  features <- c("light","canop12","topo","wetness","Ca","Al","K","CNratio")
-  
-  plot_list <- lapply(features, function(f){
-    predictor <- Predictor$new(res[[2]], data = res[[3]], y = res[[3]]$Metric)
-    ale <- FeatureEffect$new(predictor, feature = f, method = "ale")
-    plot(ale)
-  })
-  
-  return(plot_list)
-}
-
-# -- Bota --
-plot_bota_features <- plot_res_by_features(res_bota)
-
-wrap_plots(plot_bota_features, ncol = 8) +
-  plot_annotation(title = "BOTA")
-
-# -- GH --
-plot_genet_features <- plot_res_by_features(res_genet)
-
-wrap_plots(plot_genet_features, ncol = 8) +
-  plot_annotation(title = "GENET")
+# # --- Impacte d'une variable ---
+# library(iml)
+# 
+# plot_res_by_features <- function(res){
+#   features <- c("light","canop12","topo","wetness","Ca","Al","K","CNratio")
+#   
+#   plot_list <- lapply(features, function(f){
+#     predictor <- Predictor$new(res[[2]], data = res[[3]], y = res[[3]]$Metric)
+#     ale <- FeatureEffect$new(predictor, feature = f, method = "ale")
+#     plot(ale)
+#   })
+#   
+#   return(plot_list)
+# }
+# 
+# # -- Bota --
+# plot_bota_features <- plot_res_by_features(res_bota)
+# 
+# wrap_plots(plot_bota_features, ncol = 8) +
+#   plot_annotation(title = "BOTA")
+# 
+# # -- GH --
+# plot_genet_features <- plot_res_by_features(res_genet)
+# 
+# wrap_plots(plot_genet_features, ncol = 8) +
+#   plot_annotation(title = "GENET")
 
 ```
 
@@ -1122,9 +1402,61 @@ wrap_plots(plot_genet_features, ncol = 8) +
 abiotic_red <- import_abiotic() %>%
   dplyr::select(x,y,light,canop12,topo,wetness,Ca,Al,K,C,N) %>%
   mutate(CNratio = C / N) %>%
-  dplyr::select(-c(C,N))
+  dplyr::select(-c(C,N,x,y))
 
-cor(abiotic_red, use = "complete.obs")
+corr_mat <- cor(abiotic_red, use = "complete.obs")
+  
+# LONG FORMAT
+corr_df <- as.data.frame(as.table(corr_mat))
+colnames(corr_df) <- c("Var1", "Var2", "Correlation")
+
+# TRIANGLE (upper only)
+corr_df <- corr_df %>%
+  dplyr::filter(as.numeric(Var1) <= as.numeric(Var2))
+
+
+# PLOT
+ggplot(corr_df, aes(Var1, Var2, fill = Correlation)) +
+  
+  geom_tile(color = "white", size = 0.3) +
+  
+  # option valeurs (léger)
+  geom_text(aes(label = ifelse(abs(Correlation) > 0.1,
+                               sprintf("%.2f", Correlation), "")),
+            size = 3,
+            color = "white",
+            fontface = "bold") +
+  
+  scale_fill_gradient2(
+    low = "#3B4CC0",
+    mid = "white",
+    high = "#B40426",
+    midpoint = 0,
+    limits = c(-1, 1)
+  ) +
+  
+  coord_fixed() +
+  
+  theme_minimal(base_size = 13) +
+  
+  labs(
+    fill = "Pearson r"
+  ) +
+  
+  theme(
+    panel.grid = element_blank(),
+    
+    axis.text.y.left = element_markdown(face = "bold"),
+    
+    axis.title = element_blank(),
+    
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    
+    legend.position = "right",
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
 
 ```
 
@@ -1400,7 +1732,7 @@ vec_list <- lapply(c("GH","ITS"), function(m){
 
 
 
-# III. SPATIAL PATTERNS
+# II. SPATIAL PATTERNS
 # 1. Correlation tab
 
 ## A. Create
@@ -1674,6 +2006,8 @@ multcompLetters4(res_aov, tuk)
 
 # 2. Morpho
 
+## Correlation Matrix
+
 ```{r}
 # load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
 #   envir = .GlobalEnv)
@@ -1683,61 +2017,23 @@ morpho_corr_bar()
 
 
 # Plot correlation matrix
-morpho_corr_matrix()
+mat_GH <- morpho_corr_matrix(level = "Species", 
+                   marker = "GH", 
+                   model = "NCI") +
+  labs(title = "(GH)") 
 
+mat_ITS <- morpho_corr_matrix(level = "Species", 
+                   marker = "ITS", 
+                   model = "NCI") +
+  labs(title = "(ITS)") 
+
+mat_GH + mat_ITS
 
 ```
 
 
 
 # 4. Abiotic Factors
-
-## Abiotic Pannel
-
-```{r}
-
-# Import
-abiotic <- import_abiotic() %>%
-  dplyr::select(-c(x,y))
-
-# Abiotic variables
-abiotic_vars <- colnames(abiotic) 
-
-# Plot list
-plot_list <- list()
-
-# Plot loop
-for(i in 1:length(abiotic_vars)){
-  
-  # Metric
-  metric <- abiotic_vars[[i]]
-  print(metric)
-  
-  # Config
-  config <- list(
-    Type = "abiotic",
-    Metric = metric)
-  
-  # Grid
-  grid <- grid_read(config)
-  
-  # Plot
-  plot_list[[i]] <- plot_grid(grid) +
-  theme_void() +
-  labs(caption = grid$config$Name) +
-    theme(
-      plot.caption = ggplot2::element_text(
-        hjust = 0.5,   # centré
-        size = 9,
-        face = "bold.italic"
-      )
-    )
-  
-}
-
-wrap_plots(plot_list, ncol = 10)
-
-```
 
 
 ## Reads VS Light

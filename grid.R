@@ -149,11 +149,29 @@ bota_build_matrix <- function(G, B) {
   return(mat)
 }
 
+get_neighbors <- function(px, py, B, R){
+  
+  dij <- sqrt((px - B$Xfield)^2 +
+                (py - B$Yfield)^2)
+  
+  if (R == "pixel") {
+    sel <- which(B$Xfield > px-5 &
+                   B$Xfield < px+5 &
+                   B$Yfield > py-5 &
+                   B$Yfield < py+5)
+  } else {
+    sel <- which(dij < R & dij > 0)
+  }
+  
+  list(sel = sel, dij = dij)
+}
+
 bota_grid_read <- function(grid, filters = list()) {
   
   G <- grid
   C <- G$config
   M <- C$Metric
+  R <- C$Radius
   
   bota <- import_bota(C)
   B <- select_tax(bota, C$Level, C$Name)
@@ -167,6 +185,25 @@ bota_grid_read <- function(grid, filters = list()) {
                            "OTU"      = rowSums(mat > 0),
                            "Shannon"  = vegan::diversity(mat, index="shannon"),
                            "H1"       = exp(vegan::diversity(mat, index="shannon")),
+                           "NCI" = {
+                             df <- G$df
+                             
+                             sapply(1:nrow(df), function(pixel){
+                               
+                               px <- df$x[pixel]
+                               py <- df$y[pixel]
+                               
+                               res <- get_neighbors(px, py, B, R)
+                               sel <- res$sel
+                               dij <- res$dij
+                               
+                               if (length(sel) == 0) return(0)
+                               
+                               sum((B$CircCorr[sel]^C$Alpha) *
+                                     exp(-C$Beta * dij[sel]),
+                                   na.rm = TRUE)
+                             })
+                           },
                            stop("Unknown Metric: ", M)
   )
   
@@ -200,8 +237,8 @@ genet_grid_read <- function(grid, filters = list()){
   
   # Init
   reads_tax <- reads_filtered
-  # SEULEMENT POUR SHANNON ET H1 (Genus and Family levels)
-  if(M %in% c("Shannon","H1") & C$Level != "Species" & C$Marker != "18S"){
+  # SEULEMENT POUR SHANNON ET H1 (not species levels)
+  if(M %in% c("Shannon","H1") & C$Level != "Species"){
     # Grouper par OTU de même C$Level == C$Name
     
     # Créer le vecteur d'espèces aligné avec les lignes
@@ -278,3 +315,15 @@ grid_read <- function(config, filters=list()){
   return(grid)
 }
 
+build_grids <- function(config_tab){
+  
+  # Iterate on rows
+  grid_list <- lapply(seq_len(nrow(config_tab)), function(i){
+    # get parameters
+    config <- as.list(config_tab[i, ])
+    # Import grid
+    grid_read(config)
+  })
+  
+  return(grid_list)
+}

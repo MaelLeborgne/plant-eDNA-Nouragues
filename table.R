@@ -55,6 +55,60 @@ filter_select_level <- function(Level){
   return(filters)
 }
 
+# ---- Rank-Abundance Curve ----
+# TIBLE
+rank_ab_tib_bota <- function(df, Level){
+  df %>% 
+    group_by(.data[[Level]]) %>% 
+    summarize(Abundance = n(), Dominance = n()/nrow(df)) %>%
+    arrange(desc(Abundance)) %>%
+    mutate(Rank = 1:length(Abundance))
+}
+
+rank_ab_tib_bota_BA <- function(df, Level){
+  df %>% 
+    group_by(.data[[Level]]) %>% 
+    summarize(Abundance = sum(pi*(CircCorr/(2*pi))^2), Dominance = n()/nrow(df)) %>%
+    arrange(desc(Abundance)) %>%
+    mutate(Rank = 1:length(Abundance))
+}
+
+rank_ab_tib_genet <- function(df, Level){
+  
+  Reads <- colSums(df$reads)
+  as.data.frame(Reads) -> Reads
+  Reads$id <- row.names(Reads)
+  
+  left_join(df$motus, Reads, by = "id") %>%
+    dplyr::filter(!is.na(.data[[Level]])) %>%
+    group_by(.data[[Level]]) %>%
+    summarise(Reads = sum(Reads))%>%
+    ungroup() %>%
+    mutate(Dominance = Reads / sum(Reads)) %>%
+    arrange(desc(Reads)) %>%
+    mutate(Rank = row_number())
+}
+
+# VECTOR
+rank_ab_vec_bota <- function(Ab_tib, Level){
+  
+  # Build a named vector
+  Ab_vec <- Ab_tib$Abundance
+  names(Ab_vec) <- Ab_tib[[Level]]
+  
+  # Vector of abundances
+  Ab_vec %>% as.AbdVector()
+}
+
+rank_ab_vec_genet <- function(Ab_tib, Level){
+  # Build a named vector
+  Ab_vec <- Ab_tib$Reads
+  names(Ab_vec) <- Ab_tib[[Level]]
+  
+  # Vector of abundances
+  Ab_vec %>% as.AbdVector()
+}
+
 # ---- Relative abondance ----
 
 summary_ab_rel <- function(config){

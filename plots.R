@@ -37,23 +37,37 @@ plot_bota <- function(Level){
   return(p)
 }
 
-plot_grid <- function(grid, stems = FALSE, bota_focus = NULL) {
+plot_grid <- function(grid, stems = FALSE) {
   
   # Configuration
   df <- grid$df
-  config <- grid$config
+  C <- grid$config
   
   # Création du ggplot de base
   p <- ggplot(df, aes(x = x, y = y)) +
     geom_tile(aes(fill = Metric)) +
     coord_fixed() +
     theme_minimal() +
-    labs(fill = config$Metric ) +
-    scale_fill_viridis_c(option = "turbo")
+    labs(fill = NULL) +
+    scale_fill_viridis_c(option = "turbo") +
+    theme(
+      plot.title = element_text(
+        hjust = 0.5,   # centre horizontalement
+        face = "bold"  # texte en gras
+      ),
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "bottom",  # légende sous le plot
+      legend.margin = margin(t = -10)
+      )
   
   # Ajouter les stems si demandé
+  
   if(stems) {
-    if(is.null(bota_focus)) stop("Vous devez fournir bota_f si stems = TRUE")
+    bota_focus <- import_bota(list("Year" = "2012")) %>%
+      dplyr::filter(.data[[C$Level]] == C$Name)
     p <- p +
       geom_point(
         data = bota_focus,
@@ -61,16 +75,52 @@ plot_grid <- function(grid, stems = FALSE, bota_focus = NULL) {
         shape = 21,   # cercle avec contour
         fill = NA,    # pas de remplissage
         colour = "white",
-        stroke = 0.3
+        stroke = 1
+      ) +
+      guides(size = "none") +
+      geom_point(
+        data = bota_focus,
+        aes(x = Xfield, y = Yfield),
+        size = 4,
+        shape = 3,   # cross
+        colour = "white"
       )
   }
   
   return(p)
 }
 
-
+# Give a list of plot from a list of grid
+grids_to_plots <- function(grid_list, stems = FALSE){
+  
+  plot_list <- lapply(seq_along(grid_list), function(i){
+    plot_grid(grid_list[[i]], stems) +
+      labs(title = names(grid_list)[i])
+  })
+  
+  return(plot_list)
+}
 
 # ==== 1. RELATIVE ABUNDANCE ====
+
+# Whittaker plot
+plot_Whittaker_bota <- function(df, Level){
+  Ab_tib <- rank_ab_tib_bota(df, Level)
+  Ab_vec <- rank_ab_vec_bota(Ab_tib, Level)
+  
+  plot(Ab_vec, Distribution = "lnorm", main = "Bota")
+  param <- RAClnorm(Ab_vec)
+  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Abundance),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
+}
+
+plot_Whittaker_genet <- function(df, Level){
+  Ab_tib <- rank_ab_tib_genet(df, Level)
+  Ab_vec <- rank_ab_vec_genet(Ab_tib, Level)
+  
+  plot(Ab_vec, Distribution = "lnorm", ylab = "Reads")
+  param <- RAClnorm(Ab_vec)
+  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
+}
 
 ab_rel_tab <- function(df_ab_rel){
   
@@ -494,7 +544,7 @@ patch_turbo_family <- function(factor = 1){
   patchwork::wrap_plots(plots, ncol = 4)
 }
 
-mono_turbo_species <- function(grid, factor = 2) {
+mono_turbo_species <- function(grid, corr, factor = 2) {
   
   fine <- interpolate_grid_2D(grid, factor)
   
@@ -523,10 +573,15 @@ mono_turbo_species <- function(grid, factor = 2) {
       panel.grid = element_blank(),
       legend.position = "bottom",  # légende sous le plot
       legend.margin = margin(t = -10),
+      plot.title = ggplot2::element_text(
+        hjust = 0.5,   # centré
+        size = 12,
+        face = "bold.italic"
+      ),
       plot.caption = ggplot2::element_text(
         hjust = 0.5,   # centré
-        size = 9,
-        face = "bold.italic"
+        size = 11,
+        face = "bold"
       ),
       plot.margin = margin(0, 20, 0, 20)
     ) +
@@ -564,12 +619,15 @@ mono_turbo_species <- function(grid, factor = 2) {
       size = 3,
       color = "white"
     ) +
-    # ajouter nom de la famille centré en bas
-    labs(caption = grid$config$Name)
+    # ajouter nom centré en bas
+    labs(
+      title = grid$config$Name,
+      caption = paste0("Pearson's r = ", corr)
+      )
 }
 
 
-patch_turbo_species <- function(){
+patch_turbo_species_ex <- function(N_patch){
   load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_corr_tot.RData",
        envir = .GlobalEnv)
   
@@ -612,7 +670,7 @@ patch_turbo_species <- function(){
       mutate(Year = factor(2022, levels = c(2012, 2022)))
     
     # générer la heatmap
-    p <- mono_turbo_species(genet_grid)
+    p <- mono_turbo_species(genet_grid, corr)
     
     # Année 1
     p <- p +
@@ -638,22 +696,22 @@ patch_turbo_species <- function(){
       guides(size = "none")
     
     # ajouter indice en haut à gauche
-    p <- p +
-      annotate(
-        "text",
-        x = (min(genet_grid$df$x)+max(genet_grid$df$x))/2,
-        y = max(genet_grid$df$y + 60),
-        label = paste0("R = ", corr),
-        fontface = "bold",
-        hjust = 0.5,
-        vjust = 1,
-        size = 4,
-        color = "black"
-      )
+    # p <- p +
+    #   annotate(
+    #     "text",
+    #     x = (min(genet_grid$df$x)+max(genet_grid$df$x))/2,
+    #     y = min(genet_grid$df$y - 60),
+    #     label = paste0("Pearson's r = ", corr),
+    #     fontface = "bold",
+    #     hjust = 0.5,
+    #     vjust = 1,
+    #     size = 4,
+    #     color = "black"
+    #   )
   })
   
   # assembler les plots en patchwork
-  wrap_plots(common_sp$plots, ncol = 5)
+  wrap_plots(common_sp$plots, ncol = N_patch)
     # plot_annotation(
     #   title = Year,
     #   theme = theme(
@@ -678,9 +736,6 @@ patch_turbo_species_years <- function(Year1, Year2){
   # Common species with genet
   common_sp <- Reduce(intersect, list(genet_sp, bota_sp1, bota_sp2)) %>%
     sort()
-  
-  # # Select species
-  # common_sp <- common_sp[c(1,8,12,13)]
   
   # List of mini plots
   plots <- list()
@@ -1165,29 +1220,30 @@ morpho_corr_bar <- function(){
   
 }
 
-morpho_corr_matrix <- function(){
+morpho_corr_matrix <- function(level, marker, model){
   
   # Morpho
   morpho <- import_plants_morpho() %>%
     mutate(Species = gsub("_", " ", Species))
+  
   # Correlations
-  model <- tab_rar %>%
-    filter(Level == "Species",
-           g.Marker == "GH",
-           Metric_corr == "NCI") %>%
+  model_corr <- tab_rar %>%
+    filter(Level == level,
+           g.Marker == marker,
+           Metric_corr == model) %>%
     dplyr::select(Name, Correlation) %>%
     rename(Species = Name, NCI = Correlation)
   
   # Join
-  df <- inner_join(model, morpho, by = "Species") %>%
+  df <- inner_join(model_corr, morpho, by = level) %>%
     dplyr::select(-Species, -Genus, -Family, -order, -subclass2, -subclass1)
   
   # CORRELATION
   corr_mat <- cor(df, use = "pairwise.complete.obs")
   
   # Ordre basé sur Model
-  order_vars <- names(sort(corr_mat["NCI", ], decreasing = TRUE))
-  order_vars <- c("NCI", setdiff(order_vars, "NCI"))
+  order_vars <- names(sort(corr_mat[model, ], decreasing = TRUE))
+  order_vars <- c(model, setdiff(order_vars, model))
   
   # LONG FORMAT
   corr_df <- as.data.frame(as.table(corr_mat))
@@ -1206,7 +1262,7 @@ morpho_corr_matrix <- function(){
     forestgreen = c("Chlorophyll_content","Thickness","Toughness","Leaf_Area","SLA","C","N","13C","Ca","P","K"),
     orange = c("Trunk_bark_thickness","Sapwood_WSG"),
     brown = c("WSG","Diameter","SRL","Tissue_density","SRTA","branchiness"),
-    black = c("NCI")
+    black = c(model)
   )
   
   param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
@@ -1244,15 +1300,13 @@ morpho_corr_matrix <- function(){
     theme_minimal(base_size = 13) +
     
     labs(
-      title = "Trait correlation matrix",
-      subtitle = "Ordered by correlation with Model (GH marker)",
-      fill = "r"
+      fill = expression("Pearson's " * italic(r))
     ) +
     
     theme(
       panel.grid = element_blank(),
       
-      axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
+      #axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
       axis.text.y.left = element_markdown(face = "bold"),
       
       axis.title = element_blank(),
@@ -1260,7 +1314,10 @@ morpho_corr_matrix <- function(){
       plot.title = element_text(face = "bold", hjust = 0.5),
       plot.subtitle = element_text(hjust = 0.5),
       
-      legend.position = "right"
+      legend.position = "right",
+      
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank()
     )
 }
 
