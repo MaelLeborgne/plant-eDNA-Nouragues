@@ -9,7 +9,68 @@ PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
 library(tidyverse) # Basic
 library(dplyr)   # Basic
 
-# ===== 1. FAMILY COMPOSITION BY MARKER =====
+# ===== 1. TAXONOMY =====
+
+# ---- Intersection table ----
+extract_names <- function(df){
+  
+  cols <- c(
+    "Family", "family",
+    "Genus",  "genus",
+    "Species","species"
+  )
+  
+  col <- intersect(cols, names(df))[1]
+  
+  if(is.na(col)) {
+    return(df)
+  }
+  
+  df[[col]]
+}
+
+clean_names <- function(x){
+  x %>%
+    na.omit() %>%
+    unique()
+}
+
+get_ab_tib <- function(level, marker){
+  
+  if(marker == "Bota"){
+    
+    df <- import_bota(list(Year = 2012))
+    
+    return(
+      rank_ab_tib_bota(df, level)
+    )
+  }
+  
+  if(marker %in% c("GH", "ITS", "18S")){
+    
+    df <- import_genet(
+      list(
+        Marker = marker,
+        Rar = TRUE
+      )
+    )
+    
+    return(
+      rank_ab_tib_genet(df, tolower(level))
+    )
+  }
+  
+  if(marker == "REF"){
+    
+    return(
+      import_plants_nouragues() %>%
+        pull(tolower(level)) %>%
+        unique()
+    )
+  }
+  
+  NULL
+}
 
 # ---- Names and filters ----
 
@@ -219,10 +280,9 @@ percent_other <- function(df, var_ref, var_per_cols, threshold){
 
 # ---- Growth form ----
 
-growth_form_family <- function(fam_df){
-  plants_nouragues <- import_plants_nouragues()
-  
-  plants_nouragues %>%
+growth_form_family <- function(fam_df){ 
+  # for Plot
+  import_plants_nouragues() %>%
     group_by(family) %>%
     summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
     mutate(across(starts_with("stat."), ~ .x / rowSums(across(starts_with("stat."))) * 100)) %>%
@@ -230,8 +290,81 @@ growth_form_family <- function(fam_df){
     inner_join(fam_df, by="family")
 }
 
+tab_all_growth <- function(){
+  
+  # Return : all growth type table
+  import_plants_nouragues() %>%
+    summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(across(starts_with("stat."), ~ round(.x / rowSums(across(starts_with("stat."))) * 100, digits = 2))) %>%
+    rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
+    t() %>%
+    as.data.frame() %>%
+    arrange(desc(V1))
+}
 
-# ===== 2. CORRELATION TABLE =====
+tab_family_growth <- function(){
+  
+  # Return : Table by family
+  import_plants_nouragues() %>%
+    group_by(family) %>%
+    summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(across(starts_with("stat."), ~ .x / rowSums(across(starts_with("stat."))) * 100)) %>%
+    rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) 
+}
+
+
+tab_family_ref <- function(){
+  
+  # Return : Nourague reference table for families %
+  import_plants_nouragues() %>%
+    group_by(family) %>%
+    summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE)))%>%
+    mutate(
+      total = rowSums(across(starts_with("stat.")), na.rm = TRUE)
+    ) %>%
+    dplyr::select(family,total) %>%
+    ungroup() %>%
+    mutate(
+      total = (total / sum(total)) * 100
+    ) %>%
+    arrange(desc(total))
+}
+
+bias_assign <- function(df){
+  df_long <- df %>%
+    pivot_longer(
+      cols = c(REF, GH, ITS, `18S`, BOTA),
+      names_to = "inventory",
+      values_to = "i"
+    )
+  
+  ref <- df_long %>%
+    dplyr::filter(inventory == "REF") %>%
+    dplyr::select(Clade, i_ref = i)
+  
+  df_lr <- df_long %>%
+    dplyr::filter(inventory != "REF") %>%
+    dplyr::left_join(ref, by = "Clade") %>%
+    dplyr::mutate(log_ratio = i/i_ref)#log((i + 1e-7) / (i_ref + 1e-7)))
+  
+  
+  df_growth <- df_lr %>%
+    pivot_longer(
+      cols = c(terrestrial, tree, treelet, liana, shrub, vine, epilithic, parasite, hemi.epiphyte),
+      names_to = "growth",
+      values_to = "g"
+    )
+  
+  df_bias <- df_growth %>%
+    group_by(inventory, growth) %>%
+    summarise(
+      bias = weighted.mean(log_ratio, g, na.rm = TRUE)
+    )
+  
+  return(df_bias)
+}
+
+# ===== 2. SPATIAL PATTERNS =====
 
 # ---- Give names ----
 
@@ -316,16 +449,29 @@ give_common_taxa <- function(Rar, Level) {
 
 # ---- Correlation ----
 
-make_cor_table_bota_genet <- function(config_tab, level_list){
+make_cor_table_diversity <- function(config_tab){
   
-  # Add Name by Level
-  config_tab <- config_tab %>%
-    rowwise() %>%
-    mutate(Name = list(level_list[[Level]])) %>%  # Créer une liste de name
-    unnest(Name)                        # transformer la liste en lignes
+  # Initialisation to zero
+  config_tab$Correlation <- 0 
   
-  # Init column
-  config_tab$Correlation <- 0
+  # For each row in config tab
+  for(i in 1:nrow(config_tab)){
+    print(i)
+    # Compute grid correlation
+    config_tab$Correlation[[i]] <- grid_correlation(config_tab[i,])
+  }
+  
+  return(config_tab)
+}
+
+make_cor_table_spatial <- function(config_tab){
+  
+  
+  
+  # Initialisation to zero
+  config_tab$Correlation <- 0 
+  
+  # For each row in config tab
   for(i in 1:nrow(config_tab)){
     print(i)
     # Compute grid correlation
@@ -436,5 +582,8 @@ mcc <- function(x, y) {
   
   (TP * TN - FP * FN) / denom
 }
+
+# ==== 3. DIVERSITY PATTERNS ====
+
 
 

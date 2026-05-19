@@ -6,14 +6,17 @@
 library(tidyverse) # Basic
 library(dplyr) # select, filter
 library(ggplot2) # Plot
+library(ggtext)
+library(ggpubr) # afficher correlation sur graph
 library(viridis) # turbo
 library(patchwork)
 library(akima)  # pour l'interpolation 2D
 library(emmeans)
 library(multcomp)
-library(ggtext)
+library(randomForest)
 
-# ==== 0. BOTA ====
+
+# ==== < Basic > ====
 
 # Return the map of stems
 plot_bota <- function(Level){
@@ -101,258 +104,7 @@ grids_to_plots <- function(grid_list, stems = FALSE){
   return(plot_list)
 }
 
-# ==== 1. RELATIVE ABUNDANCE ====
-
-# Whittaker plot
-plot_Whittaker_bota <- function(df, Level){
-  Ab_tib <- rank_ab_tib_bota(df, Level)
-  Ab_vec <- rank_ab_vec_bota(Ab_tib, Level)
-  
-  plot(Ab_vec, Distribution = "lnorm", main = "Bota")
-  param <- RAClnorm(Ab_vec)
-  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Abundance),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
-}
-
-plot_Whittaker_genet <- function(df, Level){
-  Ab_tib <- rank_ab_tib_genet(df, Level)
-  Ab_vec <- rank_ab_vec_genet(Ab_tib, Level)
-  
-  plot(Ab_vec, Distribution = "lnorm", ylab = "Reads")
-  param <- RAClnorm(Ab_vec)
-  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
-}
-
-ab_rel_tab <- function(df_ab_rel){
-  
-  # Ordre des Sources
-  df_ab_rel$Source <- factor(
-    df_ab_rel$Source,
-    levels = c("Bota","GH","ITS","18S")
-  )
-  
-  # Ordre des Clades
-  order_bota <- df_ab_rel %>%
-    filter(Source == "Bota") %>%
-    arrange(desc(Metric)) %>%
-    distinct(Clade) %>%
-    pull(Clade)
-  
-  # autres Clade (non présents dans Bota)
-  other_clade <- setdiff(unique(df_ab_rel$Clade), order_bota)
-  
-  # combiner les deux
-  order_clade <- c(order_bota, other_clade)
-  
-  # Appliquer l'ordre
-  df_ab_rel$Clade <- factor(df_ab_rel$Clade, levels = rev(order_clade))
-  
-  # Clean data
-  tab_clean <- droplevels(na.omit(df_ab_rel))
-  
-  # Labels conditionels Y
-  labels_y <- tab_clean %>%
-    group_by(Clade) %>%
-    summarise(Metric = max(Metric), .groups = "drop") %>%
-    mutate(
-      label = if_else(
-        Metric > 2,
-        paste0("<b>", Clade, "</b>"),
-        as.character(Clade)
-      )
-    )
-  
-  # Factors
-  lab_vec <- setNames(labels_y$label, labels_y$Clade)
-  tab_clean$Clade <- factor(tab_clean$Clade, levels = names(lab_vec))
-  
-  # Plot
-  ggplot(tab_clean,
-         aes(x = Source,
-             y = Clade,
-             fill = Metric)) +
-    
-    geom_tile(color = "grey90", linewidth = 0.3) +
-    
-    geom_text(
-      aes(
-        label = sprintf("%.1f", Metric),
-        fontface = ifelse(Metric > 2, "bold", "plain")
-      ),
-      size = 3
-    ) +
-    
-    scale_x_discrete(position = "top") +
-    scale_y_discrete(
-      labels = lab_vec,
-      guide = guide_axis(n.dodge = 1)
-    ) +
-    
-    scale_fill_gradient2(
-      low = "white",
-      high = "white",
-      midpoint = 0,
-      limits = c(0, 100),
-      na.value = "white"
-    ) +
-    
-    theme_minimal(base_size = 10) +
-    
-    theme(
-      panel.grid = element_blank(),
-      axis.title = element_blank(),
-      
-      strip.background = element_blank(),
-      strip.placement = "outside",
-      axis.text.x = element_text(face = "bold", size = 14),
-      axis.text.y.left = ggtext::element_markdown(
-        hjust = 1, color = "black")
-    )
-}
-
-ab_rel_plot <- function(df_plot){
-  
-  # Mettre les clades dans l'ordre alphabétique
-  df_plot <- df_plot %>%
-    mutate(Clade = factor(Clade, levels = sort(unique(Clade))))
-  
-  # Choisir l'ordre des Source
-  df_plot <- df_plot %>%
-    mutate(Source = factor(Source, levels = c("Bota","GH","ITS","18S")))
-  
-  # calculer les positions exactes pour les labels
-  df_labels <- df_plot %>%
-    group_by(Source) %>%
-    arrange(Source, desc(Clade)) %>%
-    mutate(
-      ymax = cumsum(Metric),
-      ymin = ymax - Metric,
-      ymid = (ymin + ymax)/2
-    ) %>%
-    ungroup() %>%
-    mutate(
-      Label = case_when(
-        Clade %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", Clade, "</span>"),
-        in_bota                      ~ paste0("<span style='color:forestgreen;'>", Clade, "</span>"),
-        in_both                      ~ paste0("<span style='color:blue;'>", Clade, "</span>"),
-        in_genet                     ~ paste0("<span style='color:red;'>", Clade, "</span>"))
-    )
-  
-  # Labels vector
-  labels_vec <- setNames(df_labels$Label, df_labels$Clade)
-  
-  # x labels colors
-  labels_source <- c(
-    "Bota" = "<span style='color:forestgreen;'> Bota </span>",
-    "GH" = "<span style='color:red;'> GH </span>",
-    "ITS" = "<span style='color:red;'> ITS </span>",
-    "18S" = "<span style='color:red;'> 18S </span>"
-  )
-  
-  # Plot
-  ggplot(df_plot, aes(x = Source, y = Metric, fill = Clade)) + 
-    geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
-    
-    ggtext::geom_richtext(
-      data = df_labels,
-      aes(y = ymid, label = Label),
-      fill = "white",
-      label.size = 0,
-      fontface = "bold.italic",
-      size = 3
-    ) +
-    
-    scale_fill_viridis(discrete = TRUE, option = "C") +
-    scale_x_discrete(labels = labels_source) +
-    scale_y_continuous(labels = scales::percent_format(scale = 1)) +
-    labs(
-      x = "Inventaire / Marqueur",
-      y = "Proportion (%)",
-      fill = "Clade",
-      title = "Abondances relatives par Famille",
-      subtitle = "En richesse botanique et richesse d'OTU"
-    ) +
-    theme_minimal(base_size = 14) +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),
-      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
-      axis.text.x.bottom = ggtext::element_markdown(angle = 45, hjust = 1, face = "bold"),
-      legend.position = "none"
-    )+ 
-    geom_hline(yintercept = c(25,50,75), linetype = "dashed", color="white")
-}
-
-growth_form_plot <- function(growth_form){
-  
-  # Linéariser le dataframe
-  growth_form_long <- growth_form %>%
-    pivot_longer(
-      cols = -c(family, Clade, in_bota, in_both, in_genet),
-      names_to = "growth_form",
-      values_to = "Percent"
-    ) %>%
-    mutate(
-      color_order = case_when(
-        in_bota ~ 1,
-        in_both ~ 2,
-        in_genet ~ 3
-      )
-    )
-  
-  # ordre des family selon in_bota
-  family_order <- growth_form_long %>%
-    distinct(family, color_order) %>%
-    arrange(desc(color_order), desc(family)) %>%   # color_order, puis ordre alphabétique
-    pull(family)
-  
-  # et alphabétique
-  growth_form_long$family <- factor(
-    growth_form_long$family,
-    levels = family_order
-  )
-  
-  # créer labels avec couleur conditionelles
-  label_df <- growth_form_long %>%
-    distinct(family, color_order) %>%
-    mutate(family = as.character(family)) %>%
-    mutate(
-      label = case_when(
-        family %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", family, "</span>"),
-        color_order == 1 ~ paste0("<span style='color:forestgreen;'>", family, "</span>"),
-        color_order == 2 ~ paste0("<span style='color:blue;'>", family, "</span>"),
-        color_order == 3 ~ paste0("<span style='color:red;'>", family, "</span>"))
-    )
-  # To Named vector
-  labels_vec <- setNames(label_df$label, label_df$family)
-  
-  # Plot
-  ggplot(growth_form_long, aes(x = Percent, y = family, fill = growth_form)) + 
-    geom_bar(stat = "identity", position = "stack", color = "black") +
-    scale_x_continuous(labels = scales::percent_format(scale = 1)) +
-    scale_y_discrete(
-      labels = labels_vec,
-      guide = guide_axis(n.dodge = 1)
-    ) +
-    labs(
-      x = "Proportion (%)",
-      y = "",
-      fill = "Growth Form",
-      title = "Forme de croissance végétale selon la famille",
-      subtitle = "En richesse spécifique sur l'ensemble des nouragues"
-    ) +
-    theme_minimal(base_size = 14) +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),
-      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      axis.text.y.left = ggtext::element_markdown(
-        hjust = 1,
-        face = "bold.italic"
-      )
-    ) + 
-    geom_vline(xintercept = c(25,50,75), linetype = "dashed")
-}
-
-# ==== 2. PATCH ====
+# ==== < Patch > ====
 
 # Fonction d'interpolation 2D
 interpolate_grid_2D <- function(grid = genet_grid_read(), factor = 3) {
@@ -623,7 +375,7 @@ mono_turbo_species <- function(grid, corr, factor = 2) {
     labs(
       title = grid$config$Name,
       caption = paste0("Pearson's r = ", corr)
-      )
+    )
 }
 
 
@@ -712,12 +464,12 @@ patch_turbo_species_ex <- function(N_patch){
   
   # assembler les plots en patchwork
   wrap_plots(common_sp$plots, ncol = N_patch)
-    # plot_annotation(
-    #   title = Year,
-    #   theme = theme(
-    #     plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
-    #   )
-    # )
+  # plot_annotation(
+  #   title = Year,
+  #   theme = theme(
+  #     plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+  #   )
+  # )
 }
 
 patch_turbo_species_years <- function(Year1, Year2){
@@ -837,18 +589,301 @@ patch_turbo_species_years <- function(Year1, Year2){
   #       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
   #     )
   #   ) 
+  
+}
 
+
+
+# ==== 1. TAXONOMY ====
+
+# -- function : take two tables and make plot log-log --
+plot_log_log <- function(Ab1, Ab2, marker){
+  Ab_join_GH <- inner_join(Ab1, Ab2, by = "Family")
+  
+
+  # PLOT
+  ggplot(Ab_join_GH, aes(x = log(Abundance), y = log(Reads))) +
+    theme_light() +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    coord_fixed() +
+    xlim(0, 15) +
+    ylim(0, 15) +
+    stat_cor(method = "spearman", label.x = 1, label.y = 14) +
+    labs(title = paste0(marker, " ~ Bota")) +
+    xlab("log(Basal Area)")+
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16))
+}
+
+ab_rel_tab <- function(df_ab_rel){
+  
+  # Ordre des Sources
+  df_ab_rel$Source <- factor(
+    df_ab_rel$Source,
+    levels = c("Bota","GH","ITS","18S")
+  )
+  
+  # Ordre des Clades
+  order_bota <- df_ab_rel %>%
+    filter(Source == "Bota") %>%
+    arrange(desc(Metric)) %>%
+    distinct(Clade) %>%
+    pull(Clade)
+  
+  # autres Clade (non présents dans Bota)
+  other_clade <- setdiff(unique(df_ab_rel$Clade), order_bota)
+  
+  # combiner les deux
+  order_clade <- c(order_bota, other_clade)
+  
+  # Appliquer l'ordre
+  df_ab_rel$Clade <- factor(df_ab_rel$Clade, levels = rev(order_clade))
+  
+  # Clean data
+  tab_clean <- droplevels(na.omit(df_ab_rel))
+  
+  # Labels conditionels Y
+  labels_y <- tab_clean %>%
+    group_by(Clade) %>%
+    summarise(Metric = max(Metric), .groups = "drop") %>%
+    mutate(
+      label = if_else(
+        Metric > 2,
+        paste0("<b>", Clade, "</b>"),
+        as.character(Clade)
+      )
+    )
+  
+  # Factors
+  lab_vec <- setNames(labels_y$label, labels_y$Clade)
+  tab_clean$Clade <- factor(tab_clean$Clade, levels = names(lab_vec))
+  
+  # PLOT
+  ggplot(tab_clean,
+         aes(x = Source,
+             y = Clade,
+             fill = Metric)) +
+    
+    geom_tile(color = "grey90", linewidth = 0.3) +
+    
+    geom_text(
+      aes(
+        label = sprintf("%.1f", Metric),
+        fontface = ifelse(Metric > 2, "bold", "plain")
+      ),
+      size = 3
+    ) +
+    
+    scale_x_discrete(position = "top") +
+    scale_y_discrete(
+      labels = lab_vec,
+      guide = guide_axis(n.dodge = 1)
+    ) +
+    
+    scale_fill_gradient2(
+      low = "white",
+      high = "white",
+      midpoint = 0,
+      limits = c(0, 100),
+      na.value = "white"
+    ) +
+    
+    theme_minimal(base_size = 10) +
+    
+    theme(
+      panel.grid = element_blank(),
+      axis.title = element_blank(),
+      
+      strip.background = element_blank(),
+      strip.placement = "outside",
+      axis.text.x = element_text(face = "bold", size = 14),
+      axis.text.y.left = ggtext::element_markdown(
+        hjust = 1, color = "black")
+    )
+}
+
+ab_rel_plot <- function(df_plot){
+  
+  # Mettre les clades dans l'ordre alphabétique
+  df_plot <- df_plot %>%
+    mutate(Clade = factor(Clade, levels = sort(unique(Clade))))
+  
+  # Choisir l'ordre des Source
+  df_plot <- df_plot %>%
+    mutate(Source = factor(Source, levels = c("Bota","GH","ITS","18S")))
+  
+  # calculer les positions exactes pour les labels
+  df_labels <- df_plot %>%
+    group_by(Source) %>%
+    arrange(Source, desc(Clade)) %>%
+    mutate(
+      ymax = cumsum(Metric),
+      ymin = ymax - Metric,
+      ymid = (ymin + ymax)/2
+    ) %>%
+    ungroup() %>%
+    mutate(
+      Label = case_when(
+        Clade %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", Clade, "</span>"),
+        in_bota                      ~ paste0("<span style='color:forestgreen;'>", Clade, "</span>"),
+        in_both                      ~ paste0("<span style='color:blue;'>", Clade, "</span>"),
+        in_genet                     ~ paste0("<span style='color:red;'>", Clade, "</span>"))
+    )
+  
+  # Labels vector
+  labels_vec <- setNames(df_labels$Label, df_labels$Clade)
+  
+  # x labels colors
+  labels_source <- c(
+    "Bota" = "<span style='color:forestgreen;'> Bota </span>",
+    "GH" = "<span style='color:red;'> GH </span>",
+    "ITS" = "<span style='color:red;'> ITS </span>",
+    "18S" = "<span style='color:red;'> 18S </span>"
+  )
+  
+  # PLOT
+  ggplot(df_plot, aes(x = Source, y = Metric, fill = Clade)) + 
+    geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
+    
+    ggtext::geom_richtext(
+      data = df_labels,
+      aes(y = ymid, label = Label),
+      fill = "white",
+      label.size = 0,
+      fontface = "bold.italic",
+      size = 3
+    ) +
+    
+    scale_fill_viridis(discrete = TRUE, option = "C") +
+    scale_x_discrete(labels = labels_source) +
+    scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+    labs(
+      x = "Inventaire / Marqueur",
+      y = "Proportion (%)",
+      fill = "Clade",
+      title = "Abondances relatives par Famille",
+      subtitle = "En richesse botanique et richesse d'OTU"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+      axis.text.x.bottom = ggtext::element_markdown(angle = 45, hjust = 1, face = "bold"),
+      legend.position = "none"
+    )+ 
+    geom_hline(yintercept = c(25,50,75), linetype = "dashed", color="white")
+}
+
+growth_form_plot <- function(growth_form){
+  
+  # Linéariser le dataframe
+  growth_form_long <- growth_form %>%
+    pivot_longer(
+      cols = -c(family, Clade, in_bota, in_both, in_genet),
+      names_to = "growth_form",
+      values_to = "Percent"
+    ) %>%
+    mutate(
+      color_order = case_when(
+        in_bota ~ 1,
+        in_both ~ 2,
+        in_genet ~ 3
+      )
+    )
+  
+  # ordre des family selon in_bota
+  family_order <- growth_form_long %>%
+    distinct(family, color_order) %>%
+    arrange(desc(color_order), desc(family)) %>%   # color_order, puis ordre alphabétique
+    pull(family)
+  
+  # et alphabétique
+  growth_form_long$family <- factor(
+    growth_form_long$family,
+    levels = family_order
+  )
+  
+  # créer labels avec couleur conditionelles
+  label_df <- growth_form_long %>%
+    distinct(family, color_order) %>%
+    mutate(family = as.character(family)) %>%
+    mutate(
+      label = case_when(
+        family %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", family, "</span>"),
+        color_order == 1 ~ paste0("<span style='color:forestgreen;'>", family, "</span>"),
+        color_order == 2 ~ paste0("<span style='color:blue;'>", family, "</span>"),
+        color_order == 3 ~ paste0("<span style='color:red;'>", family, "</span>"))
+    )
+  # To Named vector
+  labels_vec <- setNames(label_df$label, label_df$family)
+  
+  # PLOT
+  ggplot(growth_form_long, aes(x = Percent, y = family, fill = growth_form)) + 
+    geom_bar(stat = "identity", position = "stack", color = "black") +
+    scale_x_continuous(labels = scales::percent_format(scale = 1)) +
+    scale_y_discrete(
+      labels = labels_vec,
+      guide = guide_axis(n.dodge = 1)
+    ) +
+    labs(
+      x = "Proportion (%)",
+      y = "",
+      fill = "Growth Form",
+      title = "Forme de croissance végétale selon la famille",
+      subtitle = "En richesse spécifique sur l'ensemble des nouragues"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.y.left = ggtext::element_markdown(
+        hjust = 1,
+        face = "bold.italic"
+      )
+    ) + 
+    geom_vline(xintercept = c(25,50,75), linetype = "dashed")
 }
 
 
 
 
 
-# ===== 3. CORRELATION MODELS =====
+# ===== 2. SPATIAL PATTERNS =====
 
+plot_correlogramme <- function(tab_rad, Marker){
+  
+  # As Factors
+  tab_rad$b.Radius <- as.factor(tab_rad$b.Radius)
+  tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
+  tab_rad$Level <- as.factor(tab_rad$Level)
+  
+  # Median and quartiles
+  tab <- tab_rad %>%
+    filter(g.Marker == Marker)
+  
+  # PLOT
+  ggplot(tab, aes(x = b.Radius, y = Correlation, color = Level, group=Level)) +
+    geom_line() +
+    geom_point() +
+    labs(x = "Radius (m)", y = "Correlation") +
+    theme_bw() +
+    geom_hline(
+      yintercept = 0,
+      linetype = "dashed"
+    ) + 
+    theme(plot.title = element_text(
+      hjust = 0.5,
+      size = 14,
+      face = "bold"
+    )) +
+    labs(title = Marker)
+}
 
 corr_tab_plot <- function(config_tab){
   
+  # SET ORDER
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
     levels = c("T+","T-","MCC","Count","NCI")
@@ -872,7 +907,7 @@ corr_tab_plot <- function(config_tab){
   # clean data
   config_tab_clean <- droplevels(na.omit(config_tab))
   
-  # Plot
+  # PLOT
   ggplot(config_tab_clean,
          aes(x = Metric_corr,
              y = Name,
@@ -913,7 +948,7 @@ corr_tab_plot <- function(config_tab){
     )
 }
 
-corr_boxplot <- function(config_tab){
+corr_violin_plot <- function(config_tab){
   
   # ordre des colonnes (Metric)
   config_tab$Metric_corr <- factor(
@@ -952,7 +987,7 @@ corr_boxplot <- function(config_tab){
       by = c("Metric_corr", "g.Marker", "Level")
     )
   
-  # Plot
+  # PLOT
   ggplot(config_tab_clean,
          aes(x = Correlation,
              y = Metric_corr)) +
@@ -1020,204 +1055,6 @@ corr_boxplot <- function(config_tab){
       breaks = seq(0, 1, 0.2),
       limits = c(-0.15, 1)
     )
-}
-
-corr_boxplot_taxo <- function(config_tab){
-  
-  # # clean data
-  # config_tab_clean <- droplevels(na.omit(config_tab))
-  # 
-  # # Test stat global
-  # res_aov3 <- aov(Correlation ~ Level, 
-  #                 data = config_tab_clean)
-  # 
-  # # Moyennes ajusté par Level
-  # emm3 <- emmeans(res_aov3, ~ Level)
-  # 
-  # # Lettre de significativités
-  # cld3 <- cld(emm3, Letters = letters, alpha = 0.1) # p-value 0.1
-  # cld_df3 <- as.data.frame(cld3)
-  # 
-  # # Position des étiquettes
-  # cld_df3 <- cld_df3 %>%
-  #   left_join(
-  #     config_tab %>%
-  #       group_by(Level) %>%
-  #       summarise(
-  #         y = min(Correlation, na.rm = TRUE)
-  #       ),
-  #     by = c("Level")
-  #   )
-  
-  # Plot
-  ggplot(tab,
-         aes(x = Level,
-             y = Correlation)) +
-    
-    # boxplot
-    geom_boxplot(
-      width = 0.8,
-      outlier.size = 1.5,
-      fill = "grey80",
-      color = "black"
-    ) +
-    
-    # points (optionnel mais recommandé)
-    geom_jitter(
-      width = 0.15,
-      size = 1,
-      alpha = 0.5
-    ) +
-    
-    # facettes = structure tableau
-    # facet_grid(Level ~ g.Marker,
-    #            scales = "free_x",
-    #            space = "free_x",
-    #            switch = "y",
-    #            drop = TRUE) +
-    
-    # axe en haut (tableau)
-    # scale_x_discrete(position = "top") +
-    
-    # geom_text(data = cld_df3,
-    #           aes(x = Metric_corr,
-    #               y = y - 0.05,   # décale au-dessus
-    #               label = .group),
-    #           inherit.aes = FALSE,
-    #           size = 5,
-    #           col = "red") +
-    
-    theme_minimal(base_size = 11) +
-    
-    theme(
-      #panel.grid = element_blank(),
-      #axis.title = element_blank(),
-      axis.title.x = element_blank(),
-      axis.line = element_line(color = "gray"),  # Lignes des axes en noir
-      axis.text = element_text(color = "black"),  # Texte des axes en noir
-      axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
-      
-      # strips
-      strip.background = element_blank(),
-      strip.placement = "outside",
-      strip.text.x = element_text(face = "bold"),
-      strip.text.y.left = element_text(angle = 0, face = "bold"),
-      
-      # axes
-      axis.text.x.top = element_text(face = "bold")
-    ) +
-    
-    labs(
-      y = "Presence/Absence Correlation (MCC)"
-    ) +
-    
-    scale_y_continuous(
-      breaks = seq(0, 1, 0.2),
-      limits = c(-0.15, 1)
-    )
-}
-
-plot_correlogramme <- function(tab_rad, Marker){
-  # As Factors
-  tab_rad$b.Radius <- as.factor(tab_rad$b.Radius)
-  tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
-  tab_rad$Level <- as.factor(tab_rad$Level)
-  
-  # # Median and quartiles
-  tab <- tab_rad %>%
-    filter(g.Marker == Marker)
-  
-  # Plot
-  ggplot(tab, aes(x = b.Radius, y = Correlation, color = Level, group=Level)) +
-    geom_line() +
-    geom_point() +
-    labs(x = "Radius (m)", y = "Correlation") +
-    theme_bw() +
-    geom_hline(
-      yintercept = 0,
-      linetype = "dashed"
-    ) + 
-    theme(plot.title = element_text(
-      hjust = 0.5,
-      size = 14,
-      face = "bold"
-    )) +
-    labs(title = Marker)
-}
-
-
-# ==== 4. CORRELATION MORPHO ====
-
-morpho_corr_bar <- function(){
-  
-  # Import Morpho
-  morpho <- import_plants_morpho() %>%
-    mutate(Species = gsub("_", " ", Species))
-  
-  # Read Model
-  model <- tab_rar %>%
-    filter(
-      Level == "Species",
-      g.Marker == "GH",
-      Metric_corr == "NCI"
-    ) %>%
-    dplyr::select(Name, Correlation) %>%
-    rename(Species = Name, Model = Correlation)
-  
-  # Inner Join
-  model_morpho_df <- inner_join(model, morpho, by = "Species") %>%
-    dplyr::select(
-      -Species, -Genus, -Family, -order, -subclass2, -subclass1
-    )
-  
-  # Prepare data
-  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")["Model", ]
-  
-  corr_df <- data.frame(
-    Variable = names(corr_vec),
-    Correlation = corr_vec
-  ) %>%
-    dplyr::filter(Variable != "Model") %>%
-    arrange(Correlation)
-  
-  # Labels colored
-  colors <- list(
-    "forestgreen" = c("Chlorophyll_content",	"Thickness",	"Toughness",	"Leaf_Area",	"SLA",	"C",	"N",	"13C",	"Ca",	"P",	"K"),
-    "orange" = c("Trunk_bark_thickness",	"Sapwood_WSG"),
-    "brown" = c("WSG"),
-    "brown" = c("Diameter",	"SRL",	"Tissue_density",	"SRTA",	"branchiness")
-  )
-  
-  # Transformer la liste en vecteur nommé (paramètre -> couleur)
-  param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
-  
-  # Générer les labels HTML automatiquement
-  labels_source <- setNames(
-    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
-    names(param_colors)
-  )
-  
-  # Plot
-  ggplot(corr_df, aes(x = reorder(Variable, Correlation), y = Correlation, fill = Correlation)) +
-    geom_col() +
-    coord_flip() +
-    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    theme_minimal(base_size = 14) +
-    labs(
-      title = "Corrélation des traits morphologique avec le modèle",
-      subtitle = "au niveau specifique pour le marker GH",
-      x = "",
-      y = "Pearson r",
-      fill = "r"
-    ) +
-    scale_x_discrete(labels = labels_source) +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),
-      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
-      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold")
-    )
-  
 }
 
 morpho_corr_matrix <- function(level, marker, model){
@@ -1322,10 +1159,147 @@ morpho_corr_matrix <- function(level, marker, model){
 }
 
 
-# ==== 5. DIVERSITY PATTERNS ====
+# ==== 3. DIVERSITY PATTERNS ====
 
-# - Comparison of local diversity patterns between above and belowground inventories
-# - Correlations de diversité selon le degrée d’agregation
+# Random forest function
+rand_for_IncMSE <- function(data_pixel){
+  
+  set.seed(123) # For reproductibility
+  
+  rf_model <- randomForest(
+    Metric ~ .,              # toutes les variables explicatives
+    data = data_pixel %>% dplyr::select(-x, -y, -sample_loc),  # enlever coordonnées si non pertinentes
+    ntree = 500,
+    importance = TRUE
+  )
+  
+  # # importance des variables
+  # importance(rf_model)
+  # varImpPlot(rf_model)
+  
+  # Plot
+  var_imp <- as.data.frame(importance(rf_model))
+  var_imp$Variable <- rownames(var_imp)
+  
+  p <- ggplot(var_imp, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
+    geom_col(fill = "grey") +
+    coord_flip() +
+    theme_light() +
+    #scale_y_continuous(limits = c(0, 20)) + # Homogène scaling
+    theme(
+      plot.title = element_text(hjust = 0,size = 14, face="bold"),
+      axis.text.y.left = element_text(face="bold")
+    )
+  
+  return(list(p, rf_model, data_pixel))
+}
+
+# --- Accumulated Local Effects ---
+plot_res_by_features <- function(res, features){
+  
+  library(iml)
+  
+  plot_list <- lapply(features, function(f){
+    predictor <- Predictor$new(res[[2]], data = res[[3]], y = res[[3]]$Metric)
+    ale <- FeatureEffect$new(predictor, feature = f, method = "ale")
+    plot(ale)
+  })
+  
+  return(plot_list)
+}
+
+# ==== < Unused but useful > ====
+
+# Whittaker plot
+plot_Whittaker_bota <- function(df, Level){
+  Ab_tib <- rank_ab_tib_bota(df, Level)
+  Ab_vec <- rank_ab_vec_bota(Ab_tib, Level)
+  
+  plot(Ab_vec, Distribution = "lnorm", main = "Bota")
+  param <- RAClnorm(Ab_vec)
+  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Abundance),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
+}
+# Whittaker plot
+plot_Whittaker_genet <- function(df, Level){
+  Ab_tib <- rank_ab_tib_genet(df, Level)
+  Ab_vec <- rank_ab_vec_genet(Ab_tib, Level)
+  
+  plot(Ab_vec, Distribution = "lnorm", ylab = "Reads")
+  param <- RAClnorm(Ab_vec)
+  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
+}
+
+morpho_corr_bar <- function(){
+  
+  # Import Morpho
+  morpho <- import_plants_morpho() %>%
+    mutate(Species = gsub("_", " ", Species))
+  
+  # Read Model
+  model <- tab_rar %>%
+    filter(
+      Level == "Species",
+      g.Marker == "GH",
+      Metric_corr == "NCI"
+    ) %>%
+    dplyr::select(Name, Correlation) %>%
+    rename(Species = Name, Model = Correlation)
+  
+  # Inner Join
+  model_morpho_df <- inner_join(model, morpho, by = "Species") %>%
+    dplyr::select(
+      -Species, -Genus, -Family, -order, -subclass2, -subclass1
+    )
+  
+  # Prepare data
+  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")["Model", ]
+  
+  corr_df <- data.frame(
+    Variable = names(corr_vec),
+    Correlation = corr_vec
+  ) %>%
+    dplyr::filter(Variable != "Model") %>%
+    arrange(Correlation)
+  
+  # Labels colored
+  colors <- list(
+    "forestgreen" = c("Chlorophyll_content",	"Thickness",	"Toughness",	"Leaf_Area",	"SLA",	"C",	"N",	"13C",	"Ca",	"P",	"K"),
+    "orange" = c("Trunk_bark_thickness",	"Sapwood_WSG"),
+    "brown" = c("WSG"),
+    "brown" = c("Diameter",	"SRL",	"Tissue_density",	"SRTA",	"branchiness")
+  )
+  
+  # Transformer la liste en vecteur nommé (paramètre -> couleur)
+  param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
+  
+  # Générer les labels HTML automatiquement
+  labels_source <- setNames(
+    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
+    names(param_colors)
+  )
+  
+  # Plot
+  ggplot(corr_df, aes(x = reorder(Variable, Correlation), y = Correlation, fill = Correlation)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    theme_minimal(base_size = 14) +
+    labs(
+      title = "Corrélation des traits morphologique avec le modèle",
+      subtitle = "au niveau specifique pour le marker GH",
+      x = "",
+      y = "Pearson r",
+      fill = "r"
+    ) +
+    scale_x_discrete(labels = labels_source) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold")
+    )
+  
+}
 
 # ===== < DEPRECATED > =====
 
