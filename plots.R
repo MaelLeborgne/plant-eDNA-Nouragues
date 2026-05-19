@@ -16,582 +16,6 @@ library(multcomp)
 library(randomForest)
 
 
-# ==== < Basic > ====
-
-# Return the map of stems
-plot_bota <- function(Level){
-  
-  # Configuration
-  config <- list(Year=2012)
-  bota <- import_bota(config)
-  
-  # Create plot
-  p <- ggplot(bota, aes(x = Xfield, y = Yfield)) +
-    geom_point(
-      aes(color = .data[[Level]], size = CircCorr),
-      shape = 21,       # Cercle (21–25 permettent un remplissage)
-      fill = NA,        # Creux (pas de remplissage)
-      stroke = 1        # Épaisseur du contour
-    ) +
-    theme_minimal() +
-    coord_fixed() +
-    theme(legend.position = "none")
-  
-  return(p)
-}
-
-plot_grid <- function(grid, stems = FALSE) {
-  
-  # Configuration
-  df <- grid$df
-  C <- grid$config
-  
-  # Création du ggplot de base
-  p <- ggplot(df, aes(x = x, y = y)) +
-    geom_tile(aes(fill = Metric)) +
-    coord_fixed() +
-    theme_minimal() +
-    labs(fill = NULL) +
-    scale_fill_viridis_c(option = "turbo") +
-    theme(
-      plot.title = element_text(
-        hjust = 0.5,   # centre horizontalement
-        face = "bold"  # texte en gras
-      ),
-      axis.title = element_blank(),
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
-      legend.margin = margin(t = -10)
-      )
-  
-  # Ajouter les stems si demandé
-  
-  if(stems) {
-    bota_focus <- import_bota(list("Year" = "2012")) %>%
-      dplyr::filter(.data[[C$Level]] == C$Name)
-    p <- p +
-      geom_point(
-        data = bota_focus,
-        aes(x = Xfield, y = Yfield, size = CircCorr/10),
-        shape = 21,   # cercle avec contour
-        fill = NA,    # pas de remplissage
-        colour = "white",
-        stroke = 1
-      ) +
-      guides(size = "none") +
-      geom_point(
-        data = bota_focus,
-        aes(x = Xfield, y = Yfield),
-        size = 4,
-        shape = 3,   # cross
-        colour = "white"
-      )
-  }
-  
-  return(p)
-}
-
-# Give a list of plot from a list of grid
-grids_to_plots <- function(grid_list, stems = FALSE){
-  
-  plot_list <- lapply(seq_along(grid_list), function(i){
-    plot_grid(grid_list[[i]], stems) +
-      labs(title = names(grid_list)[i])
-  })
-  
-  return(plot_list)
-}
-
-# ==== < Patch > ====
-
-# Fonction d'interpolation 2D
-interpolate_grid_2D <- function(grid = genet_grid_read(), factor = 3) {
-  
-  # Configuration
-  G <- grid
-  df <- G$df
-  
-  # 1 Grille fine
-  dx <- min(diff(sort(unique(df$x)))) / factor
-  dy <- min(diff(sort(unique(df$y)))) / factor
-  x_fine <- seq(min(df$x), max(df$x), by = dx)
-  y_fine <- seq(min(df$y), max(df$y), by = dy)
-  
-  # 2 Interpolation 2D
-  interp_res <- akima::interp(
-    x = df$x,
-    y = df$y,
-    z = df$Metric,
-    xo = x_fine,
-    yo = y_fine,
-    linear = FALSE, # spline bicubique
-    extrap = TRUE
-  )
-  
-  # 3 Transformer en data.frame pour ggplot
-  interp_df <- expand.grid(x = interp_res$x, y = interp_res$y)
-  interp_df$krig <- as.vector(interp_res$z)
-  
-  # 4 Tronquer à 0
-  interp_df$krig <- pmax(as.vector(interp_res$z), 0)
-  
-  return(interp_df)
-}
-
-# Plot interpolate grid
-plot_grid_interp <- function(grid, factor = 2) {
-  
-  fine <- interpolate_grid_2D(grid, factor)
-  
-  # Valeurs limites pour positionner l'échelle
-  x_min <- min(fine$x)
-  x_max <- max(fine$x)
-  y_min <- min(fine$y)
-  y_max <- max(fine$y)
-  
-  n <- 256
-  
-  ggplot(fine, aes(x = x, y = y, fill = krig)) +
-    geom_tile() +
-    scale_fill_gradientn(
-      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1)
-    ) +
-    coord_fixed() +
-    theme_minimal()+
-    
-    # supprimer axes et ticks
-    theme(
-      axis.title = element_blank(),
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
-      legend.margin = ggplot2::margin(t = -10),
-      plot.caption = element_text(
-        hjust = 0.5,   # centré
-        size = 12
-      ),
-      plot.margin = ggplot2::margin(0, 20, 0, 20)
-    ) +
-    
-    # légende horizontale sans titre
-    guides(
-      fill = guide_colorbar(
-        title = NULL, 
-        direction = "horizontal",
-        barwidth = unit(6, "lines"),  # "npc" = 1 fois la largeur du panel
-        barheight = unit(0.5, "lines")  # hauteur de la barre
-      )
-    )+
-    
-    # ligne d'échelle horizontale (50 unités)
-    geom_segment(
-      aes(
-        x = x_min + 20,
-        xend = x_min + 20 + 50,
-        y = y_max - 0.05 * (y_max - y_min),
-        yend = y_max - 0.05 * (y_max - y_min)
-      ),
-      color = "white",
-      size = 0.7
-    ) +
-    
-    # label "50 m"
-    annotate(
-      "text",
-      x = x_min + 20 + 25,  # au milieu de la ligne
-      y = y_max - 0.08 * (y_max - y_min),
-      label = "50 m",
-      hjust = 0.5,
-      vjust = 1,
-      size = 3,
-      color = "white"
-    )+
-    # ajouter nom de la famille centré en bas
-    labs(caption = grid$config$Name)
-}
-
-# Fonction de plot  with soft theme
-plot_grid_interp_soft <- function(grid, factor = 3) {
-  
-  fine <- interpolate_grid_2D(grid, factor)
-  
-  # Valeurs limites pour positionner l'échelle
-  x_min <- min(fine$x)
-  x_max <- max(fine$x)
-  y_min <- min(fine$y)
-  y_max <- max(fine$y)
-  
-  n <- 256
-  
-  ggplot(fine, aes(x = x, y = y, fill = krig)) +
-    geom_tile() +
-    scale_fill_gradientn(
-      colours = turbo(100)
-      #limits = c(0, 30) # Homogene scaling color
-    ) +
-    coord_fixed() +
-    theme_light()+
-    
-    # supprimer axes et ticks
-    theme(
-      legend.margin = ggplot2::margin(t = -10),
-      plot.title = element_text(hjust = 0,size = 14, face="bold"),
-      plot.margin = ggplot2::margin(0, 20, 0, 20)
-    )
-}
-
-patch_turbo_family <- function(factor = 1){
-  
-  # Configuration
-  basic_config <- list(
-    Type = "genet",
-    Rar = FALSE,
-    Marker = "GH",
-    Metric = "OTU",
-    Level = "Family"
-  )
-  
-  # 13 familles les plus abondante (>1%, voir graph plot_tab_familly_multi())
-  familles <- c("Fabaceae","Sapotaceae","Lecythidaceae","Moraceae","Chrysobalanaceae","Annonaceae","Putranjivaceae","Meliaceae","Apocynaceae","Malvaceae","Urticaceae","Euphorbiaceae","Sapindaceae")
-  
-  plots <- list()
-  
-  for(i in seq_along(familles)) {
-    
-    # Configuration
-    fam <- familles[i]
-    config <- basic_config
-    config$Name <- familles[i]
-    
-    # Test
-    print(config$Name)
-    
-    # Read grid
-    grid <- grid_read(config)
-    
-    # générer la heatmap
-    p <- plot_grid_interp(grid, factor = factor)
-    
-    # ajouter indice en haut à gauche
-    p <- p +
-      annotate(
-        "text",
-        x = min(grid$df$x),
-        y = max(grid$df$y + 60),
-        label = paste0("(", i, ")"),
-        fontface = "bold",
-        hjust = 0,
-        vjust = 1,
-        size = 5,
-        color = "black"
-      )
-    
-    plots[[i]] <- p
-  }
-  
-  # assembler les plots en patchwork
-  patchwork::wrap_plots(plots, ncol = 4)
-}
-
-mono_turbo_species <- function(grid, corr, factor = 2) {
-  
-  fine <- interpolate_grid_2D(grid, factor)
-  
-  # Valeurs limites pour positionner l'échelle
-  x_min <- min(fine$x)
-  x_max <- max(fine$x)
-  y_min <- min(fine$y)
-  y_max <- max(fine$y)
-  
-  n <- 256
-  
-  ggplot(fine, aes(x = x, y = y, fill = krig)) +
-    geom_tile() +
-    scale_fill_gradientn(
-      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1),
-      breaks = scales::breaks_pretty(n = 2)
-    ) +
-    coord_fixed() +
-    theme_minimal()+
-    
-    # supprimer axes et ticks
-    theme(
-      axis.title = element_blank(),
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
-      legend.margin = margin(t = -10),
-      plot.title = ggplot2::element_text(
-        hjust = 0.5,   # centré
-        size = 12,
-        face = "bold.italic"
-      ),
-      plot.caption = ggplot2::element_text(
-        hjust = 0.5,   # centré
-        size = 11,
-        face = "bold"
-      ),
-      plot.margin = margin(0, 20, 0, 20)
-    ) +
-    
-    # légende horizontale sans titre
-    guides(
-      fill = guide_colorbar(
-        title = NULL, 
-        direction = "horizontal",
-        barwidth = unit(4, "lines"),  # "npc" = 1 fois la largeur du panel
-        barheight = unit(0.5, "lines")  # hauteur de la barre
-      )
-    ) +
-    
-    # ligne d'échelle horizontale (50 unités)
-    geom_segment(
-      aes(
-        x = x_min ,
-        xend = x_min + 50,
-        y = y_max - 0.05 * (y_max - y_min),
-        yend = y_max - 0.05 * (y_max - y_min)
-      ),
-      color = "white",
-      size = 0.5
-    ) +
-    
-    # label "50 m"
-    annotate(
-      "text",
-      x = x_min + 20 + 25,  # au milieu de la ligne
-      y = y_max - 0.08 * (y_max - y_min),
-      label = "50 m",
-      hjust = 0.5,
-      vjust = 1,
-      size = 3,
-      color = "white"
-    ) +
-    # ajouter nom centré en bas
-    labs(
-      title = grid$config$Name,
-      caption = paste0("Pearson's r = ", corr)
-    )
-}
-
-
-patch_turbo_species_ex <- function(N_patch){
-  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_corr_tot.RData",
-       envir = .GlobalEnv)
-  
-  common_sp <- df_corr_tot %>%
-    dplyr::filter(
-      Level %in% c("Species"),
-      g.Marker %in% c("GH"),
-      Metric_corr %in% c("NCI")
-    ) %>%
-    dplyr::select(Name,Correlation) %>%
-    arrange(desc(Correlation))
-  
-  # Select species
-  common_sp <- common_sp[c(1,7,12,13),]
-  
-  common_sp$plots <- lapply(seq_along(common_sp$Name),function(i){
-    
-    sp <- common_sp$Name[[i]]
-    corr <- common_sp$Correlation[[i]] %>% round(digits = 3)
-    print(sp)
-    
-    # Import genet grid
-    genet_grid <- grid_read(list(
-      "Type" = "genet",
-      "Rar" = TRUE,
-      "Marker" = "GH",
-      "Level" = "Species",
-      "Name" = sp,
-      "Metric" = "Reads"
-    ))
-    
-    # Bota year 1 grid
-    bota_focus1 <- import_bota(list("Year" = 2012)) %>%
-      filter(Species == sp) %>%
-      mutate(Year = factor(2012, levels = c(2012, 2022)))
-    
-    # Bota year 2 grid
-    bota_focus2 <- import_bota(list("Year" = 2022)) %>%
-      filter(Species == sp) %>%
-      mutate(Year = factor(2022, levels = c(2012, 2022)))
-    
-    # générer la heatmap
-    p <- mono_turbo_species(genet_grid, corr)
-    
-    # Année 1
-    p <- p +
-      geom_point(
-        data = bota_focus1,
-        aes(x = Xfield, y = Yfield, size = CircCorr/2),
-        color = "red",
-        shape = 21,
-        stroke = 0.3,
-        fill = NA
-      )
-    
-    # Année 2
-    p <- p +
-      geom_point(
-        data = bota_focus2,
-        aes(x = Xfield, y = Yfield, size = CircCorr),
-        color = "orange",
-        shape = 21,
-        stroke = 0.3,
-        fill = NA
-      )+
-      guides(size = "none")
-    
-    # ajouter indice en haut à gauche
-    # p <- p +
-    #   annotate(
-    #     "text",
-    #     x = (min(genet_grid$df$x)+max(genet_grid$df$x))/2,
-    #     y = min(genet_grid$df$y - 60),
-    #     label = paste0("Pearson's r = ", corr),
-    #     fontface = "bold",
-    #     hjust = 0.5,
-    #     vjust = 1,
-    #     size = 4,
-    #     color = "black"
-    #   )
-  })
-  
-  # assembler les plots en patchwork
-  wrap_plots(common_sp$plots, ncol = N_patch)
-  # plot_annotation(
-  #   title = Year,
-  #   theme = theme(
-  #     plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
-  #   )
-  # )
-}
-
-patch_turbo_species_years <- function(Year1, Year2){
-  
-  # Import Genet species
-  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
-  
-  # Import bota species
-  bota1 <- import_bota(list("Year" = Year1))
-  bota2 <- import_bota(list("Year" = Year2))
-  
-  # Keep unique species
-  bota_sp1 <- unique(bota1$Species)
-  bota_sp2 <- unique(bota2$Species)
-  
-  # Common species with genet
-  common_sp <- Reduce(intersect, list(genet_sp, bota_sp1, bota_sp2)) %>%
-    sort()
-  
-  # List of mini plots
-  plots <- list()
-  
-  # Loop over species
-  for(i in seq_along(common_sp)) {
-    
-    # Set species
-    sp <- common_sp[i]
-    
-    # Print species
-    print(sp)
-    
-    # Genet config
-    genet_config <- list(
-      "Type" = "genet",
-      "Rar" = TRUE,
-      "Marker" = "GH",
-      "Level" = "Species",
-      "Name" = sp,
-      "Metric" = "Reads"
-    )
-    
-    # Genèt Grid
-    genet_grid <- grid_read(genet_config)
-    
-    # Bota year 1 grid
-    bota_focus1 <- import_bota(list("Year" = Year1)) %>%
-      filter(Species == sp) %>%
-      mutate(Year = factor(Year1, levels = c(Year1, Year2)))
-    
-    # Bota year 2 grid
-    bota_focus2 <- import_bota(list("Year" = Year2)) %>%
-      filter(Species == sp) %>%
-      mutate(Year = factor(Year2, levels = c(Year1, Year2)))
-    
-    # générer la heatmap
-    p <- mono_turbo_species(genet_grid)
-    
-    # Année 1
-    p <- p +
-      geom_point(
-        data = bota_focus1,
-        aes(x = Xfield, y = Yfield, size = CircCorr/2),
-        color = "red",
-        shape = 21,
-        stroke = 0.3,
-        fill = NA
-      )
-    
-    # Année 2
-    p <- p +
-      geom_point(
-        data = bota_focus2,
-        aes(x = Xfield, y = Yfield, size = CircCorr),
-        color = "orange",
-        shape = 21,
-        stroke = 0.3,
-        fill = NA
-      ) +
-      guides(size = "none")
-    
-    # # Year color
-    # p <- p +
-    #   scale_color_manual(
-    #     values = setNames(
-    #       c("red", "orange"),
-    #       c(as.character(Year1), as.character(Year2))
-    #     ),
-    #     name = "Year"
-    #   ) +
-    #   guides(size = "none")
-    
-    # index
-    p <- p +
-      annotate(
-        "text",
-        x = min(genet_grid$df$x),
-        y = max(genet_grid$df$y + 60),
-        label = paste0("(", i, ")"),
-        fontface = "bold",
-        hjust = 0,
-        vjust = 1,
-        size = 4
-      ) 
-    
-    
-    plots[[i]] <- p
-  }
-  
-  # assembler les plots en patchwork
-  wrap_plots(plots, ncol = 4) 
-  # +
-  #   plot_annotation(
-  #     title = "Comparaison des Inventaires botaniques de 2012 et 2022 avec l'emprunte ADNe",
-  #     subtitle = "Au niveau specifique pour le marqueur GH",
-  #     theme = theme(
-  #       plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
-  #       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
-  #     )
-  #   ) 
-  
-}
-
 
 
 # ==== 1. TAXONOMY ====
@@ -1206,6 +630,582 @@ plot_res_by_features <- function(res, features){
   })
   
   return(plot_list)
+}
+
+# ==== < Basic > ====
+
+# Return the map of stems
+plot_bota <- function(Level){
+  
+  # Configuration
+  config <- list(Year=2012)
+  bota <- import_bota(config)
+  
+  # Create plot
+  p <- ggplot(bota, aes(x = Xfield, y = Yfield)) +
+    geom_point(
+      aes(color = .data[[Level]], size = CircCorr),
+      shape = 21,       # Cercle (21–25 permettent un remplissage)
+      fill = NA,        # Creux (pas de remplissage)
+      stroke = 1        # Épaisseur du contour
+    ) +
+    theme_minimal() +
+    coord_fixed() +
+    theme(legend.position = "none")
+  
+  return(p)
+}
+
+plot_grid <- function(grid, stems = FALSE) {
+  
+  # Configuration
+  df <- grid$df
+  C <- grid$config
+  
+  # Création du ggplot de base
+  p <- ggplot(df, aes(x = x, y = y)) +
+    geom_tile(aes(fill = Metric)) +
+    coord_fixed() +
+    theme_minimal() +
+    labs(fill = NULL) +
+    scale_fill_viridis_c(option = "turbo") +
+    theme(
+      plot.title = element_text(
+        hjust = 0.5,   # centre horizontalement
+        face = "bold"  # texte en gras
+      ),
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "bottom",  # légende sous le plot
+      legend.margin = margin(t = -10)
+    )
+  
+  # Ajouter les stems si demandé
+  
+  if(stems) {
+    bota_focus <- import_bota(list("Year" = "2012")) %>%
+      dplyr::filter(.data[[C$Level]] == C$Name)
+    p <- p +
+      geom_point(
+        data = bota_focus,
+        aes(x = Xfield, y = Yfield, size = CircCorr/10),
+        shape = 21,   # cercle avec contour
+        fill = NA,    # pas de remplissage
+        colour = "white",
+        stroke = 1
+      ) +
+      guides(size = "none") +
+      geom_point(
+        data = bota_focus,
+        aes(x = Xfield, y = Yfield),
+        size = 4,
+        shape = 3,   # cross
+        colour = "white"
+      )
+  }
+  
+  return(p)
+}
+
+# Give a list of plot from a list of grid
+grids_to_plots <- function(grid_list, stems = FALSE){
+  
+  plot_list <- lapply(seq_along(grid_list), function(i){
+    plot_grid(grid_list[[i]], stems) +
+      labs(title = names(grid_list)[i])
+  })
+  
+  return(plot_list)
+}
+
+# ==== < Patch > ====
+
+# Fonction d'interpolation 2D
+interpolate_grid_2D <- function(grid = genet_grid_read(), factor = 3) {
+  
+  # Configuration
+  G <- grid
+  df <- G$df
+  
+  # 1 Grille fine
+  dx <- min(diff(sort(unique(df$x)))) / factor
+  dy <- min(diff(sort(unique(df$y)))) / factor
+  x_fine <- seq(min(df$x), max(df$x), by = dx)
+  y_fine <- seq(min(df$y), max(df$y), by = dy)
+  
+  # 2 Interpolation 2D
+  interp_res <- akima::interp(
+    x = df$x,
+    y = df$y,
+    z = df$Metric,
+    xo = x_fine,
+    yo = y_fine,
+    linear = FALSE, # spline bicubique
+    extrap = TRUE
+  )
+  
+  # 3 Transformer en data.frame pour ggplot
+  interp_df <- expand.grid(x = interp_res$x, y = interp_res$y)
+  interp_df$krig <- as.vector(interp_res$z)
+  
+  # 4 Tronquer à 0
+  interp_df$krig <- pmax(as.vector(interp_res$z), 0)
+  
+  return(interp_df)
+}
+
+# Plot interpolate grid
+plot_grid_interp <- function(grid, factor = 2) {
+  
+  fine <- interpolate_grid_2D(grid, factor)
+  
+  # Valeurs limites pour positionner l'échelle
+  x_min <- min(fine$x)
+  x_max <- max(fine$x)
+  y_min <- min(fine$y)
+  y_max <- max(fine$y)
+  
+  n <- 256
+  
+  ggplot(fine, aes(x = x, y = y, fill = krig)) +
+    geom_tile() +
+    scale_fill_gradientn(
+      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1)
+    ) +
+    coord_fixed() +
+    theme_minimal()+
+    
+    # supprimer axes et ticks
+    theme(
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "bottom",  # légende sous le plot
+      legend.margin = ggplot2::margin(t = -10),
+      plot.caption = element_text(
+        hjust = 0.5,   # centré
+        size = 12
+      ),
+      plot.margin = ggplot2::margin(0, 20, 0, 20)
+    ) +
+    
+    # légende horizontale sans titre
+    guides(
+      fill = guide_colorbar(
+        title = NULL, 
+        direction = "horizontal",
+        barwidth = unit(6, "lines"),  # "npc" = 1 fois la largeur du panel
+        barheight = unit(0.5, "lines")  # hauteur de la barre
+      )
+    )+
+    
+    # ligne d'échelle horizontale (50 unités)
+    geom_segment(
+      aes(
+        x = x_min + 20,
+        xend = x_min + 20 + 50,
+        y = y_max - 0.05 * (y_max - y_min),
+        yend = y_max - 0.05 * (y_max - y_min)
+      ),
+      color = "white",
+      size = 0.7
+    ) +
+    
+    # label "50 m"
+    annotate(
+      "text",
+      x = x_min + 20 + 25,  # au milieu de la ligne
+      y = y_max - 0.08 * (y_max - y_min),
+      label = "50 m",
+      hjust = 0.5,
+      vjust = 1,
+      size = 3,
+      color = "white"
+    )+
+    # ajouter nom de la famille centré en bas
+    labs(caption = grid$config$Name)
+}
+
+# Fonction de plot  with soft theme
+plot_grid_interp_soft <- function(grid, factor = 3) {
+  
+  fine <- interpolate_grid_2D(grid, factor)
+  
+  # Valeurs limites pour positionner l'échelle
+  x_min <- min(fine$x)
+  x_max <- max(fine$x)
+  y_min <- min(fine$y)
+  y_max <- max(fine$y)
+  
+  n <- 256
+  
+  ggplot(fine, aes(x = x, y = y, fill = krig)) +
+    geom_tile() +
+    scale_fill_gradientn(
+      colours = turbo(100)
+      #limits = c(0, 30) # Homogene scaling color
+    ) +
+    coord_fixed() +
+    theme_light()+
+    
+    # supprimer axes et ticks
+    theme(
+      legend.margin = ggplot2::margin(t = -10),
+      plot.title = element_text(hjust = 0,size = 14, face="bold"),
+      plot.margin = ggplot2::margin(0, 20, 0, 20)
+    )
+}
+
+patch_turbo_family <- function(factor = 1){
+  
+  # Configuration
+  basic_config <- list(
+    Type = "genet",
+    Rar = FALSE,
+    Marker = "GH",
+    Metric = "OTU",
+    Level = "Family"
+  )
+  
+  # 13 familles les plus abondante (>1%, voir graph plot_tab_familly_multi())
+  familles <- c("Fabaceae","Sapotaceae","Lecythidaceae","Moraceae","Chrysobalanaceae","Annonaceae","Putranjivaceae","Meliaceae","Apocynaceae","Malvaceae","Urticaceae","Euphorbiaceae","Sapindaceae")
+  
+  plots <- list()
+  
+  for(i in seq_along(familles)) {
+    
+    # Configuration
+    fam <- familles[i]
+    config <- basic_config
+    config$Name <- familles[i]
+    
+    # Test
+    print(config$Name)
+    
+    # Read grid
+    grid <- grid_read(config)
+    
+    # générer la heatmap
+    p <- plot_grid_interp(grid, factor = factor)
+    
+    # ajouter indice en haut à gauche
+    p <- p +
+      annotate(
+        "text",
+        x = min(grid$df$x),
+        y = max(grid$df$y + 60),
+        label = paste0("(", i, ")"),
+        fontface = "bold",
+        hjust = 0,
+        vjust = 1,
+        size = 5,
+        color = "black"
+      )
+    
+    plots[[i]] <- p
+  }
+  
+  # assembler les plots en patchwork
+  patchwork::wrap_plots(plots, ncol = 4)
+}
+
+mono_turbo_species <- function(grid, corr, factor = 2) {
+  
+  fine <- interpolate_grid_2D(grid, factor)
+  
+  # Valeurs limites pour positionner l'échelle
+  x_min <- min(fine$x)
+  x_max <- max(fine$x)
+  y_min <- min(fine$y)
+  y_max <- max(fine$y)
+  
+  n <- 256
+  
+  ggplot(fine, aes(x = x, y = y, fill = krig)) +
+    geom_tile() +
+    scale_fill_gradientn(
+      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1),
+      breaks = scales::breaks_pretty(n = 2)
+    ) +
+    coord_fixed() +
+    theme_minimal()+
+    
+    # supprimer axes et ticks
+    theme(
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "bottom",  # légende sous le plot
+      legend.margin = margin(t = -10),
+      plot.title = ggplot2::element_text(
+        hjust = 0.5,   # centré
+        size = 12,
+        face = "bold.italic"
+      ),
+      plot.caption = ggplot2::element_text(
+        hjust = 0.5,   # centré
+        size = 11,
+        face = "bold"
+      ),
+      plot.margin = margin(0, 20, 0, 20)
+    ) +
+    
+    # légende horizontale sans titre
+    guides(
+      fill = guide_colorbar(
+        title = NULL, 
+        direction = "horizontal",
+        barwidth = unit(4, "lines"),  # "npc" = 1 fois la largeur du panel
+        barheight = unit(0.5, "lines")  # hauteur de la barre
+      )
+    ) +
+    
+    # ligne d'échelle horizontale (50 unités)
+    geom_segment(
+      aes(
+        x = x_min ,
+        xend = x_min + 50,
+        y = y_max - 0.05 * (y_max - y_min),
+        yend = y_max - 0.05 * (y_max - y_min)
+      ),
+      color = "white",
+      size = 0.5
+    ) +
+    
+    # label "50 m"
+    annotate(
+      "text",
+      x = x_min + 20 + 25,  # au milieu de la ligne
+      y = y_max - 0.08 * (y_max - y_min),
+      label = "50 m",
+      hjust = 0.5,
+      vjust = 1,
+      size = 3,
+      color = "white"
+    ) +
+    # ajouter nom centré en bas
+    labs(
+      title = grid$config$Name,
+      caption = paste0("Pearson's r = ", corr)
+    )
+}
+
+
+patch_turbo_species_ex <- function(N_patch){
+  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_corr_tot.RData",
+       envir = .GlobalEnv)
+  
+  common_sp <- df_corr_tot %>%
+    dplyr::filter(
+      Level %in% c("Species"),
+      g.Marker %in% c("GH"),
+      Metric_corr %in% c("NCI")
+    ) %>%
+    dplyr::select(Name,Correlation) %>%
+    arrange(desc(Correlation))
+  
+  # Select species
+  common_sp <- common_sp[c(1,7,12,13),]
+  
+  common_sp$plots <- lapply(seq_along(common_sp$Name),function(i){
+    
+    sp <- common_sp$Name[[i]]
+    corr <- common_sp$Correlation[[i]] %>% round(digits = 3)
+    print(sp)
+    
+    # Import genet grid
+    genet_grid <- grid_read(list(
+      "Type" = "genet",
+      "Rar" = TRUE,
+      "Marker" = "GH",
+      "Level" = "Species",
+      "Name" = sp,
+      "Metric" = "Reads"
+    ))
+    
+    # Bota year 1 grid
+    bota_focus1 <- import_bota(list("Year" = 2012)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(2012, levels = c(2012, 2022)))
+    
+    # Bota year 2 grid
+    bota_focus2 <- import_bota(list("Year" = 2022)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(2022, levels = c(2012, 2022)))
+    
+    # générer la heatmap
+    p <- mono_turbo_species(genet_grid, corr)
+    
+    # Année 1
+    p <- p +
+      geom_point(
+        data = bota_focus1,
+        aes(x = Xfield, y = Yfield, size = CircCorr/2),
+        color = "red",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      )
+    
+    # Année 2
+    p <- p +
+      geom_point(
+        data = bota_focus2,
+        aes(x = Xfield, y = Yfield, size = CircCorr),
+        color = "orange",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      )+
+      guides(size = "none")
+    
+    # ajouter indice en haut à gauche
+    # p <- p +
+    #   annotate(
+    #     "text",
+    #     x = (min(genet_grid$df$x)+max(genet_grid$df$x))/2,
+    #     y = min(genet_grid$df$y - 60),
+    #     label = paste0("Pearson's r = ", corr),
+    #     fontface = "bold",
+    #     hjust = 0.5,
+    #     vjust = 1,
+    #     size = 4,
+    #     color = "black"
+    #   )
+  })
+  
+  # assembler les plots en patchwork
+  wrap_plots(common_sp$plots, ncol = N_patch)
+  # plot_annotation(
+  #   title = Year,
+  #   theme = theme(
+  #     plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+  #   )
+  # )
+}
+
+patch_turbo_species_years <- function(Year1, Year2){
+  
+  # Import Genet species
+  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
+  
+  # Import bota species
+  bota1 <- import_bota(list("Year" = Year1))
+  bota2 <- import_bota(list("Year" = Year2))
+  
+  # Keep unique species
+  bota_sp1 <- unique(bota1$Species)
+  bota_sp2 <- unique(bota2$Species)
+  
+  # Common species with genet
+  common_sp <- Reduce(intersect, list(genet_sp, bota_sp1, bota_sp2)) %>%
+    sort()
+  
+  # List of mini plots
+  plots <- list()
+  
+  # Loop over species
+  for(i in seq_along(common_sp)) {
+    
+    # Set species
+    sp <- common_sp[i]
+    
+    # Print species
+    print(sp)
+    
+    # Genet config
+    genet_config <- list(
+      "Type" = "genet",
+      "Rar" = TRUE,
+      "Marker" = "GH",
+      "Level" = "Species",
+      "Name" = sp,
+      "Metric" = "Reads"
+    )
+    
+    # Genèt Grid
+    genet_grid <- grid_read(genet_config)
+    
+    # Bota year 1 grid
+    bota_focus1 <- import_bota(list("Year" = Year1)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(Year1, levels = c(Year1, Year2)))
+    
+    # Bota year 2 grid
+    bota_focus2 <- import_bota(list("Year" = Year2)) %>%
+      filter(Species == sp) %>%
+      mutate(Year = factor(Year2, levels = c(Year1, Year2)))
+    
+    # générer la heatmap
+    p <- mono_turbo_species(genet_grid)
+    
+    # Année 1
+    p <- p +
+      geom_point(
+        data = bota_focus1,
+        aes(x = Xfield, y = Yfield, size = CircCorr/2),
+        color = "red",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      )
+    
+    # Année 2
+    p <- p +
+      geom_point(
+        data = bota_focus2,
+        aes(x = Xfield, y = Yfield, size = CircCorr),
+        color = "orange",
+        shape = 21,
+        stroke = 0.3,
+        fill = NA
+      ) +
+      guides(size = "none")
+    
+    # # Year color
+    # p <- p +
+    #   scale_color_manual(
+    #     values = setNames(
+    #       c("red", "orange"),
+    #       c(as.character(Year1), as.character(Year2))
+    #     ),
+    #     name = "Year"
+    #   ) +
+    #   guides(size = "none")
+    
+    # index
+    p <- p +
+      annotate(
+        "text",
+        x = min(genet_grid$df$x),
+        y = max(genet_grid$df$y + 60),
+        label = paste0("(", i, ")"),
+        fontface = "bold",
+        hjust = 0,
+        vjust = 1,
+        size = 4
+      ) 
+    
+    
+    plots[[i]] <- p
+  }
+  
+  # assembler les plots en patchwork
+  wrap_plots(plots, ncol = 4) 
+  # +
+  #   plot_annotation(
+  #     title = "Comparaison des Inventaires botaniques de 2012 et 2022 avec l'emprunte ADNe",
+  #     subtitle = "Au niveau specifique pour le marqueur GH",
+  #     theme = theme(
+  #       plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+  #       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
+  #     )
+  #   ) 
+  
 }
 
 # ==== < Unused but useful > ====

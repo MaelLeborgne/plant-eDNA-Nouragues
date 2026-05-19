@@ -449,24 +449,13 @@ give_common_taxa <- function(Rar, Level) {
 
 # ---- Correlation ----
 
-make_cor_table_diversity <- function(config_tab){
-  
-  # Initialisation to zero
-  config_tab$Correlation <- 0 
-  
-  # For each row in config tab
-  for(i in 1:nrow(config_tab)){
-    print(i)
-    # Compute grid correlation
-    config_tab$Correlation[[i]] <- grid_correlation(config_tab[i,])
-  }
-  
-  return(config_tab)
-}
-
-make_cor_table_spatial <- function(config_tab){
-  
-  
+make_cor_table_spatial <- function(config_tab, level_list){
+    
+  # Add Name by Level
+  config_tab <- config_tab %>%
+    rowwise() %>%
+    mutate(Name = list(level_list[[Level]])) %>%  # Créer une liste de name
+    unnest(Name)                        # transformer la liste en lignes
   
   # Initialisation to zero
   config_tab$Correlation <- 0 
@@ -585,5 +574,18 @@ mcc <- function(x, y) {
 
 # ==== 3. DIVERSITY PATTERNS ====
 
-
+make_cor_table_diversity <- function(config_tab){
+  
+  # Initialisation to zero
+  config_tab$Correlation <- 0 
+  
+  # For each row in config tab
+  for(i in 1:nrow(config_tab)){
+    print(i)
+    # Compute grid correlation
+    config_tab$Correlation[[i]] <- grid_correlation(config_tab[i,])
+  }
+  
+  return(config_tab)
+}
 
