@@ -16,8 +16,6 @@ library(multcomp)
 library(randomForest)
 
 
-
-
 # ==== 1. TAXONOMY ====
 
 # -- function : take two tables and make plot log-log --
@@ -26,15 +24,17 @@ plot_log_log <- function(Ab1, Ab2, marker){
   Ab_join <- inner_join(Ab1, Ab2, by = "Family")
 
   # PLOT
-  ggplot(Ab_join, aes(x = log(Abundance), y = log(Reads),color=tree)) +
+  ggplot(Ab_join, aes(x = log(Abundance+1), y = log(Reads+1))) +
     theme_light() +
-    geom_point() +
-    geom_smooth(method = "lm") +
+    geom_point(aes(color=tree)) +
+    geom_smooth(method = "lm", color = "blue") +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     coord_fixed() +
     xlim(0, 15) +
     ylim(0, 15) +
-    stat_cor(method = "spearman", label.x = 1, label.y = 14) +
+    stat_cor(method = "kendall",
+             cor.coef.name = "tau",
+             label.x = 1, label.y = 14) +
     annotate(
       "text",
       x = 1,
@@ -46,7 +46,8 @@ plot_log_log <- function(Ab1, Ab2, marker){
     labs(
       title = paste0(marker, " ~ Bota"),
       color = "trees (%)") +
-    xlab("log(Basal Area)")+
+    xlab("log(Basal Area + 1)")+
+    ylab("log(Reads + 1)")+
     theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16)) +
     scale_color_gradient(
       low = "black",

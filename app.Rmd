@@ -105,11 +105,10 @@ plot_list <- lapply(names(list_by_level), function(lvl){
 # Display
 plot_list
 
-
 ```
 
 
-## 2. Rank correspondance (+ Kendall test)
+## 2. Rank correspondance (OK)
 
 ```{r}
 
@@ -188,18 +187,6 @@ p3 <- plot_log_log(Ab_bota, Ab_18S, "18S")
 # Patch
 p1 | p2
 
-
-# Tests statistiques :
-
-# 1. “Est-ce que les rangs sont respectés entre inventaires ?”
-# Kendall's tau
-# cor.test(rank_inv1, rank_inv2, method = "kendall")
-# library(irr)
-# kendall(matrix_des_rangs)
-
-# 2. “Est-ce que le génétique amplifie la dominance ?”
-# Régression
-# lm(log(abond_genetique) ~ log(abond_botanique))
 # 🔍 Interprétation
 # pente = 1 → pas de changement de structure
 # pente > 1 → amplification des dominantes
