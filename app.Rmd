@@ -33,7 +33,7 @@ source("plots.R")
 
 # I. TAXONOMY DETECTION
 
-## 1. Intersection table (To Fix)
+## 1. Intersection table (+ To Fix)
 
 ```{r}
 
@@ -106,7 +106,7 @@ plot_list <- lapply(names(list_by_level_clean), function(lvl){
 ```
 
 
-## 2. Rank correspondance
+## 2. Rank correspondance (+ Kendall test)
 
 ```{r}
 
@@ -118,6 +118,14 @@ bota <- import_bota(list("Year" = 2012))
 
 # Relative dominance
 Ab_bota <- rank_ab_tib_bota_BA(bota, "Family")
+
+# Growth type
+tab_growth <- tab_family_growth() %>%
+  dplyr::select(family,tree) %>%
+  dplyr::rename(Family = family)
+
+# Join
+Ab_bota <- inner_join(Ab_bota, tab_growth)
 
 # --------------------------------------------------
 # Import GH
@@ -148,6 +156,20 @@ Ab_ITS <- rank_ab_tib_genet(metabarlist, "family") %>%
   dplyr::rename(Family = family)
 
 # --------------------------------------------------
+# Import 18S
+# --------------------------------------------------
+
+metabarlist <- import_genet(
+  list(
+    "Marker" = "18S",
+    "Rar" = TRUE
+  ))
+
+# Relative dominance
+Ab_18S <- rank_ab_tib_genet(metabarlist, "family") %>%
+  dplyr::rename(Family = family)
+
+# --------------------------------------------------
 # Plot log-log
 # --------------------------------------------------
 
@@ -156,6 +178,9 @@ p1 <- plot_log_log(Ab_bota, Ab_GH, "GH")
 
 # ITS
 p2 <- plot_log_log(Ab_bota, Ab_ITS, "ITS")
+
+# 18S
+p3 <- plot_log_log(Ab_bota, Ab_18S, "18S")
 
 # Patch
 p1 | p2
@@ -180,7 +205,7 @@ p1 | p2
 ```
 
 
-## 3. Growth Types Table
+## 3. Growth Types Table (OK)
 
 
 ```{r}
@@ -198,7 +223,7 @@ tab_family_ref() # %>% view()
 
 ## 4. RICHNESS and GROWTH
 
-### A. Main figure
+### A. Main figure (OK)
 
 ```{r}
 
@@ -289,7 +314,7 @@ p2 <- growth_form_plot(growth_form)
 
 ```
 
-### B. Annexe Table
+### B. Annexe Table (+ ref Nouragues)
 
 ```{r}
 
@@ -339,14 +364,17 @@ ab_rel_tab(df_plot_rar)
 
 ```
 
-### C. Create
+### C. Create (+ To fix : 100%)
 
 ```{r}
+# --------------------------------------------------
+# Genet Rarefied
+# --------------------------------------------------
 
-# ==== TEST 1 ====
+# Configuration
 test_1 <- expand.grid(
   Type = "genet",
-  Rar = c(FALSE,TRUE),
+  Rar = TRUE,
   Marker = c("GH","ITS","18S"),
   Level = c("Family"),
   Metric = "OTU",
@@ -356,12 +384,15 @@ test_1 <- expand.grid(
 # Fill results
 test_1 <- test_ab_rel_sum(test_1)
 
-# ==== TEST 3 ====
+# --------------------------------------------------
+# Bota
+# --------------------------------------------------
+
 test_3 <- expand.grid(
   Type = "bota",
   Year = "2012",
   Level = "Family",
-  Metric = c("OTU","Count","Basal_Area_m2"),
+  Metric = c("OTU"),
   Radius = "pixel",
   stringsAsFactors = FALSE
 )
@@ -369,47 +400,28 @@ test_3 <- expand.grid(
 # Fill results
 test_3 <- test_ab_rel_sum(test_3)
 
-
-# ==== Combine ====
+# --------------------------------------------------
+# COMBINE
+# --------------------------------------------------
 df_ab_rel_Richness <- bind_rows(test_1, test_3)
 
-# View
+# --------------------------------------------------
+# VIEW
+# --------------------------------------------------
 view(df_ab_rel_Richness)
-
-# ==== 18S Rar (Poaceae add) ====
-view(df_ab_rel_Richness$Result[6])
-
-poaceae_18S <- expand.grid(
-  Type = "genet",
-  Rar = c(TRUE),
-  Marker = c("18S"),
-  Level = c("Family"),
-  Metric = "OTU",
-  stringsAsFactors = FALSE
-)
-# Fill results
-poaceae_18S <- test_ab_rel_sum(poaceae_18S)
-df_ab_rel_Richness$Result[6][[1]] <- poaceae_18S$Result[[1]]
-
 
 # --------------------------------------------------
 # SAVE
 # --------------------------------------------------
-# save( df_ab_rel_Richness,
-#   file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData")
+save( df_ab_rel_Richness,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData")
 
 
 ```
 
 
 
-
-
-
-
-
-
-## 5. Growth Type Detectability
+## 5. Growth Type Detectability (Ok)
 
 ```{r}
 
@@ -439,10 +451,10 @@ tab_ref <- tab_family_ref() %>%
 # List
 df_list <- list(
   tab_ref,
-  df_ab_rel_Richness$Result[[2]] %>% rename(GH = Metric),
-  df_ab_rel_Richness$Result[[4]] %>% rename(ITS = Metric),
-  df_ab_rel_Richness$Result[[6]] %>% rename(`18S` = Metric),
-  df_ab_rel_Richness$Result[[7]] %>% rename(BOTA = Metric),
+  df_ab_rel_Richness$Result[[1]] %>% rename(GH = Metric),
+  df_ab_rel_Richness$Result[[2]] %>% rename(ITS = Metric),
+  df_ab_rel_Richness$Result[[3]] %>% rename(`18S` = Metric),
+  df_ab_rel_Richness$Result[[4]] %>% rename(BOTA = Metric),
   tab_fam
 )
 
@@ -456,26 +468,15 @@ dataset <- reduce(df_list, full_join, by = "Clade") %>%
 df_bias <- bias_assign(dataset)
 
 # --------------------------------------------------
+# REF PROPORTION TABLE
+# --------------------------------------------------
+ref_tab <- tab_all_growth() # %>% view()
+
+# --------------------------------------------------
 # PLOT
 # --------------------------------------------------
+plot_bias_growth(df_bias, ref_tab)
 
-df_bias %>%
-  ggplot(aes(x = growth, y = inventory, fill = bias)) +
-  geom_tile() +
-  geom_text(aes(label = round(bias, 2)), size = 4) +
-  scale_fill_gradient2(
-    low = "blue",
-    mid = "white",
-    high = "red",
-    midpoint = 1,
-    limits = c(0, max(df_bias$bias, na.rm = TRUE))
-  ) +
-  theme_minimal() +
-  theme(
-    axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
-    axis.text.y.left = element_markdown(face = "bold"),
-  ) +
-  labs(x = "Growth form", y = "Inventory", fill = "Ratio (inv/ref)")
 
 ```
 
@@ -485,59 +486,7 @@ df_bias %>%
 
 ## 1. Correlation tab
 
-### A. Create
-
-#### Un-rarefied
-
-```{r}
-
-# --------------------------------------------------
-# CONFIGURATION
-# --------------------------------------------------
-
-# Rar
-rar <- FALSE
-
-# Levels
-levels <- c("Species", "Genus", "Family")
-
-# Configurations
-config_unrar <- expand.grid(
-  "g.Rar" = rar,
-  "g.Marker" = c("GH","ITS","18S"),
-  "b.Radius" = 10,
-  "b.Year" = c(2012),
-  "Metric_corr" = c("Count","NCI","MCC"),
-  "Level" = levels,
-  stringsAsFactors = FALSE
-)
-
-# Give common Names for each level
-level_list <- setNames(
-  lapply(levels, function(l) give_common_taxa(Rar = rar, Level = l)),
-  levels
-)
-
-# --------------------------------------------------
-# RUN CALCULS
-# --------------------------------------------------
-tab_unrar <- make_cor_table_spatial(config_unrar, level_list)
-
-# --------------------------------------------------
-# VIEW
-# --------------------------------------------------
-view(tab_unrar)
-
-# --------------------------------------------------
-# SAVE
-# --------------------------------------------------
-save( tab_unrar,
-  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_unrar.RData")
-
-```
-
-
-#### Rarefied
+### A. Create (+ To fix NCI + hyperbolic)
 
 ```{r}
 
@@ -582,11 +531,11 @@ view(tab_rar)
 # SAVE
 # --------------------------------------------------
 save( tab_rar,
-  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData")
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData")
 
 ```
 
-### B. Plot Annexe tables
+### B. Plot Annexe tables (OK)
 
 ```{r}
 
@@ -627,7 +576,7 @@ tab_rar %>%
 
 ```
 
-### C. Plot Violin
+### C. Plot Violin (OK)
 
 ```{r}
 
@@ -652,7 +601,7 @@ tab_rar %>%
 
 ## 2. Correlation Morphological traits
 
-### A. Species Level
+### A. Species Level (+ 3 models + family level)
 
 ```{r}
 # --------------------------------------------------
@@ -671,21 +620,23 @@ mat_GH <- morpho_corr_matrix(level = "Species",
                    model = "NCI") +
   labs(title = "(GH)") 
 
-# -- ITS --
-mat_ITS <- morpho_corr_matrix(level = "Species", 
-                   marker = "ITS", 
-                   model = "NCI") +
-  labs(title = "(ITS)") 
+# # -- ITS --
+# mat_ITS <- morpho_corr_matrix(level = "Species", 
+#                    marker = "ITS", 
+#                    model = "NCI") +
+#   labs(title = "(ITS)") 
 
 # Patchwork
-(mat_GH + mat_ITS)
+mat_GH
 
 ```
 
 
 # III. DIVERSITY PATTERNS
 
-### A. Calculs
+## 1. Radius Correlogram
+
+### A. Calculs (OK)
 
 ```{r}
 # --------------------------------------------------
@@ -722,7 +673,7 @@ save( tab_rad_H1,
 
 ```
 
-### B. Plots
+### B. Plots (OK)
 ```{r}
 # --------------------------------------------------
 # LOAD
@@ -747,9 +698,9 @@ p3 <- plot_correlogramme(tab_rad_H1,"18S")
 (p1 | p2 | p3)
 ```
 
-## 2. Diversity patterns & Random Forest
+## 2. Random Forest
 
-### A. Main figure
+### A. Main figure (OK)
 
 ```{r}
 
@@ -762,7 +713,7 @@ bota_H1_grid <- grid_read(list(
   Type = "bota",
   Year = "2012",
   Radius = 10,
-  Metric = "H1",
+  Metric = "OTU",
   Level = "Species",
   Name = "All"))
 
@@ -790,7 +741,7 @@ ITS_H1_grid <- grid_read(list(
 
 # -- ABIOTIC --
 abiotic <- import_abiotic() %>%
-  dplyr::select(x,y,light,canop12,topo,wetness,Ca,Al,K,C,N) %>%
+  dplyr::select(x,y,wetness,Al,K,Ca,Na,Fe,C,N,light) %>%
   mutate(CNratio = C / N) %>%
   dplyr::select(-c(C,N))
 
@@ -823,7 +774,7 @@ res_ITS <- rand_for_IncMSE(data_pixel_ITS)
 ## Patterns
 # -- BOTA --
 p1 <- plot_grid_interp_soft(bota_H1_grid) +
-  labs(title = "(a)", caption = "", fill = "H1") 
+  labs(title = "(a)", caption = "", fill = "Spe.Rich.") 
 
 # -- GH -- 
 p2 <- plot_grid_interp_soft(GH_H1_grid) +
@@ -859,7 +810,7 @@ cor(GH_H1_grid$df$Metric, ITS_H1_grid$df$Metric, method="spearman")
 
 ```
 
-### B. Accumulated Local Effects (ALE)
+### B. Accumulated Local Effects (+ To fix)
 
 ```{r}
 
@@ -901,7 +852,7 @@ wrap_plots(
 ```
 
 
-### C. Abiotic params correlation
+### C. Abiotic params correlation (OK)
 
 ```{r}
 

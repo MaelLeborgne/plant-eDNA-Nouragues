@@ -22,11 +22,11 @@ library(randomForest)
 
 # -- function : take two tables and make plot log-log --
 plot_log_log <- function(Ab1, Ab2, marker){
-  Ab_join_GH <- inner_join(Ab1, Ab2, by = "Family")
-  
+  # JOIN
+  Ab_join <- inner_join(Ab1, Ab2, by = "Family")
 
   # PLOT
-  ggplot(Ab_join_GH, aes(x = log(Abundance), y = log(Reads))) +
+  ggplot(Ab_join, aes(x = log(Abundance), y = log(Reads),color=tree)) +
     theme_light() +
     geom_point() +
     geom_smooth(method = "lm") +
@@ -35,9 +35,24 @@ plot_log_log <- function(Ab1, Ab2, marker){
     xlim(0, 15) +
     ylim(0, 15) +
     stat_cor(method = "spearman", label.x = 1, label.y = 14) +
-    labs(title = paste0(marker, " ~ Bota")) +
+    annotate(
+      "text",
+      x = 1,
+      y = 13,
+      label = paste0("n = ", nrow(Ab_join)),
+      hjust = 0,
+      size = 4
+    ) +
+    labs(
+      title = paste0(marker, " ~ Bota"),
+      color = "trees (%)") +
     xlab("log(Basal Area)")+
-    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16))
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16)) +
+    scale_color_gradient(
+      low = "black",
+      high = "blue",
+      limits = c(0, 100)
+    )
 }
 
 ab_rel_tab <- function(df_ab_rel){
@@ -270,7 +285,39 @@ growth_form_plot <- function(growth_form){
     geom_vline(xintercept = c(25,50,75), linetype = "dashed")
 }
 
-
+plot_bias_growth <- function(df_bias, ref_tab){
+  
+  # Order factors
+  ## inventory
+  df_bias$inventory <- factor(
+    df_bias$inventory,
+    levels = c("18S","ITS","GH","BOTA")
+  )
+  ## growth form
+  df_bias$growth <- factor(
+    df_bias$growth,
+    levels = rownames(ref_tab)
+  )
+  
+  # Plots
+  df_bias %>%
+    ggplot(aes(x = growth, y = inventory, fill = bias)) +
+    geom_tile() +
+    geom_text(aes(label = round(bias, 2)), size = 4) +
+    scale_fill_gradient2(
+      low = "blue",
+      mid = "white",
+      high = "red",
+      midpoint = 1,
+      limits = c(0, max(df_bias$bias, na.rm = TRUE))
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
+      axis.text.y.left = element_markdown(face = "bold"),
+    ) +
+    labs(x = "Growth form", y = "Inventory", fill = "Ratio (inv/ref)")
+}
 
 
 
