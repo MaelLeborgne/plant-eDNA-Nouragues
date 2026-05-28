@@ -72,6 +72,46 @@ get_ab_tib <- function(level, marker){
   NULL
 }
 
+get_tax_list <- function(Level, Marker){
+  if(Marker == "Bota"){
+    
+    df <- import_bota(list(Year = 2012))
+    
+    return(
+      df %>% 
+        pull(.data[[Level]]) %>%
+        unique()
+    )
+  }
+  
+  if(Marker %in% c("GH", "ITS", "18S")){
+    
+    df <- import_genet(
+      list(
+        Marker = Marker,
+        Rar = TRUE
+      )
+    )
+    
+    return(
+      rank_ab_tib_genet(df, tolower(Level)) %>% 
+        pull(.data[[tolower(Level)]])
+    )
+  }
+  
+  if(Marker == "REF"){
+    
+    return(
+      import_plants_nouragues() %>%
+        pull(tolower(Level)) %>%
+        unique()
+    )
+  }
+  
+  NULL
+  
+}
+
 # ---- Names and filters ----
 
 give_level_names <- function(config){

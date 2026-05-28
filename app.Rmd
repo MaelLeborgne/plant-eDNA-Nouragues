@@ -33,7 +33,7 @@ source("plots.R")
 
 # I. TAXONOMY DETECTION
 
-## 1. Intersection table (+ To Fix)
+## 1. Intersection table (OK)
 
 ```{r}
 
@@ -55,10 +55,10 @@ config_tab <- expand.grid(
 # Fill community composition
 # --------------------------------------------------
 
-config_tab$Ab_tib <- map2(
+config_tab$tax_list <- map2(
   config_tab$Level,
   config_tab$Marker,
-  get_ab_tib
+  get_tax_list
 )
 
 # --------------------------------------------------
@@ -67,17 +67,17 @@ config_tab$Ab_tib <- map2(
 
 list_by_level <- config_tab %>%
   split(.$Level) %>%
-  map(~ setNames(.x$Ab_tib, .x$Marker))
+  map(~ setNames(.x$tax_list, .x$Marker))
 
 # --------------------------------------------------
 # Clean lists
 # --------------------------------------------------
 
-list_by_level_clean <- map(
-  list_by_level,
-  ~ map(.x, extract_names) %>%
-      map(clean_names)
-)
+# list_by_level_clean <- map(
+#   list_by_level,
+#   ~ map(.x, extract_names) %>%
+#       map(clean_names)
+# )
 
 # --------------------------------------------------
 # Plots
@@ -87,8 +87,8 @@ list_by_level_clean <- map(
 set_size <- list("Family"=200, "Genus"=600, "Species"=1600)
 
 # List of plots : Family, Genus, Species
-plot_list <- lapply(names(list_by_level_clean), function(lvl){
-  data_upset <- fromList(list_by_level_clean[[lvl]])
+plot_list <- lapply(names(list_by_level), function(lvl){
+  data_upset <- fromList(list_by_level[[lvl]])
   
   upset(data_upset,
         nsets = ncol(data_upset),
@@ -101,6 +101,9 @@ plot_list <- lapply(names(list_by_level_clean), function(lvl){
         sets.x.label = "Set Size",
         set_size.scale_max = set_size[[lvl]])
 })
+
+# Display
+plot_list
 
 
 ```
