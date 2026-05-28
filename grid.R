@@ -55,18 +55,16 @@ init_grid <- function(config, filters = list()){
 # ==== TAXA FILTERS ====
 select_tax <- function(Data, Level, Name){
   
-  focus <- NULL
-  
   if(Name == "All"){
     focus <- Data
+    return(focus)
   }
   else{
     # Select the focus in Data
-    focus <- Data[Data[Level] == Name,]
+    focus <- Data[!is.na(Data[[Level]]) & Data[[Level]] == Name,]
+    return(focus)
   }
-  
-  # Return
-  return(focus)
+
 }
 
 apply_filters <- function(df,
@@ -168,17 +166,30 @@ get_neighbors <- function(px, py, B, R){
 
 bota_grid_read <- function(grid, filters = list()) {
   
+  # Configuration
   G <- grid
   C <- G$config
   M <- C$Metric
   R <- C$Radius
   
+  # Importation
   bota <- import_bota(C)
-  B <- select_tax(bota, C$Level, C$Name)
-  B <- rlang::exec(apply_filters, B, !!!filters)
   
+  # Replace NA by Indet. (same as bota survey)
+  for (l in c("Family","Genus","Species")) {
+    bota[[l]][is.na(bota[[l]])] <- "Indet."
+  }
+  
+  # Selection
+  B <- select_tax(bota, C$Level, C$Name)
+  
+  # # Filter
+  # B <- rlang::exec(apply_filters, B, !!!filters)
+  
+  # Build Matrix
   mat <- bota_build_matrix(G, B)
   
+  # Fill Metric
   grid$df$Metric <- switch(M,
                            "Count"    = rowSums(mat),
                            "Presence" = as.integer(rowSums(mat) > 0),
@@ -207,6 +218,7 @@ bota_grid_read <- function(grid, filters = list()) {
                            stop("Unknown Metric: ", M)
   )
   
+  # Return
   return(grid)
 }
 
@@ -222,12 +234,20 @@ genet_grid_read <- function(grid, filters = list()){
   # Import genet
   genet <- import_genet(C)
   
+  # Replace NA by Indet. (same as bota survey)
+  for (l in c("family","genus","species")) {
+    genet$motus[[l]][is.na(genet$motus[[l]])] <- "Indet."
+  }
+  
   # Select OTU
   otu_list <- select_tax(genet$motus, tolower(C$Level), C$Name)
-  # Apply otu filters
-  otu_list <- rlang::exec(apply_filters, otu_list, !!!filters) 
+  
+  # # Apply otu filters
+  # otu_list <- rlang::exec(apply_filters, otu_list, !!!filters) 
+  
   # get otu_id
-  otu_list <- otu_list %>% filter(!is.na(id)) %>% pull(id)     
+  otu_list <- otu_list %>% filter(!is.na(id)) %>% pull(id)
+  
   # Replace : and - by . # (18S anomaly)
   otu_list <- gsub(":", ".", otu_list)
   otu_list <- gsub("-", ".", otu_list)
@@ -238,8 +258,8 @@ genet_grid_read <- function(grid, filters = list()){
   # Init
   reads_tax <- reads_filtered
   # SEULEMENT POUR SHANNON ET H1 (not species levels)
+  # Grouper par OTU de même C$Level == C$Name
   if(M %in% c("Shannon","H1") & C$Level != "Species"){
-    # Grouper par OTU de même C$Level == C$Name
     
     # Créer le vecteur d'espèces aligné avec les lignes
     tax_names <- genet$motus[[tolower(C$Level)]][

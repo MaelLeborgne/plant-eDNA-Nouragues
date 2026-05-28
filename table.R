@@ -73,34 +73,30 @@ get_ab_tib <- function(level, marker){
 }
 
 get_tax_list <- function(Level, Marker){
+  # Bota
   if(Marker == "Bota"){
-    
     df <- import_bota(list(Year = 2012))
-    
     return(
       df %>% 
         pull(.data[[Level]]) %>%
         unique()
     )
   }
-  
+  # Genet
   if(Marker %in% c("GH", "ITS", "18S")){
-    
     df <- import_genet(
       list(
         Marker = Marker,
         Rar = TRUE
       )
     )
-    
     return(
       rank_ab_tib_genet(df, tolower(Level)) %>% 
         pull(.data[[tolower(Level)]])
     )
   }
-  
+  # Ref
   if(Marker == "REF"){
-    
     return(
       import_plants_nouragues() %>%
         pull(tolower(Level)) %>%
@@ -108,6 +104,7 @@ get_tax_list <- function(Level, Marker){
     )
   }
   
+  # else
   NULL
   
 }
@@ -218,16 +215,16 @@ summary_ab_rel <- function(config){
   config_all <- config
   config_all$Name <- "All"
   
-  # Filter list
-  filters <- filter_select_level(config$Level) 
-  filters$filter_monocot <- FALSE
+  # # Filter list
+  # filters <- filter_select_level(config$Level) 
+  # filters$filter_monocot <- FALSE
   
   # Read grid All
   grid_all <- grid_read(config_all)
-  total <- sum(grid_all$df$Metric)
+  total <- sum(grid_all$df$Metric, na.rm = TRUE)
   
   # Récupère tous les noms du clade
-  all_names <- give_level_names(config)
+  all_names <- c(give_level_names(config),"Indet.") %>% unique()
   
   results <- lapply(all_names, function(n) {
     print(n)
@@ -240,7 +237,7 @@ summary_ab_rel <- function(config){
     grid <- grid_read(config_name)
     
     # Total
-    total_name <- sum(grid$df$Metric)
+    total_name <- sum(grid$df$Metric, na.rm = TRUE)
     ab_rel <- (total_name*100) / total
     
     data.frame(
@@ -262,7 +259,7 @@ test_ab_rel_sum <- function(config_table){
   
   # Check 100%
   config_table$Check_100 <- lapply(seq_len(nrow(config_table)), function(i) {
-    sum(config_table$Result[[i]]$Metric)
+    sum(config_table$Result[[i]]$Metric, na.rm = TRUE)
   })
   
   return(config_table)
