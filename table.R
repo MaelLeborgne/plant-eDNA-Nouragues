@@ -317,7 +317,10 @@ percent_other <- function(df, var_ref, var_per_cols, threshold){
 
 # ---- Growth form ----
 
-growth_form_family <- function(fam_df){ 
+growth_form_family <- function(fam_vec){
+  # Vector to df
+  fam_df <- data.frame(family = fam_vec)
+  
   # for Plot
   import_plants_nouragues() %>%
     group_by(family) %>%

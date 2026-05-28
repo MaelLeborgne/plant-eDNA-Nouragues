@@ -235,8 +235,8 @@ df_reduced$Result <- lapply(seq_len(nrow(df_reduced)), function(i) {
   })
 
 # Liste des indices correspondant aux différentes sources
-source_indices <- c(1, 2, 3, 4, 5, 6, 7)
-source_names <- c( "GH","GH", "ITS","ITS", "18S","18S", "Bota")
+source_indices <- c(1, 2, 3, 4)
+source_names <- c( "GH", "ITS", "18S", "Bota")
 
 # Appliquer une fonction à chaque élément de la liste df_reduced$Result
 df_list <- lapply(seq_along(source_indices), function(i) {
@@ -252,49 +252,28 @@ df_list <- lapply(seq_along(source_indices), function(i) {
 # --------------------------------------------------
 # MAKE FAMILIES REFERENCE
 # --------------------------------------------------
-
-# All families
-all_fam <-  bind_rows(df_list[c(2,4,6,7)]) %>% 
-  pull(Clade) %>%
-  unique()
-
-# Bota families
-bota_fam <- df_list[7][[1]]$Clade
-
-# Genet families
-gen_fam <- bind_rows(df_list[c(2,4,6)]) %>% 
-  pull(Clade) %>%
-  unique()
-
-# Family reference with labels color
-all_fam_df <- data.frame(
-  family = all_fam,
-  Clade = all_fam,
-  in_bota = all_fam %in% bota_fam & !all_fam %in% gen_fam,
-  in_genet = all_fam %in% gen_fam & !all_fam %in% bota_fam,
-  in_both = all_fam %in% bota_fam & all_fam %in% gen_fam
-)
+all_fam_df <- fam_order_col(df_list)
 
 # --------------------------------------------------
 # ABUNDANCE
 # --------------------------------------------------
 
 # Select
-df_plot_rar <- bind_rows(df_list[c(2, 4, 6, 7)]) %>%
+df_ab_rel <- bind_rows(df_list) %>%
   left_join(all_fam_df, by = "Clade")
 
 # Plot
-p1 <- ab_rel_plot(df_plot_rar)
+p1 <- ab_rel_plot(df_ab_rel)
 
 # --------------------------------------------------
 # GROWTH TYPE
 # --------------------------------------------------
 
-# Select
-growth_form <- growth_form_family(all_fam_df)
+df_growth <- growth_form_family(all_fam_df$family) %>%
+  left_join(all_fam_df, by = "family")
 
 # Plot
-p2 <- growth_form_plot(growth_form)
+p2 <- growth_form_plot(df_growth)
 
 # --------------------------------------------------
 # PLOT
@@ -312,11 +291,18 @@ p2 <- growth_form_plot(growth_form)
 # LOAD
 # --------------------------------------------------
 
+# Surveys
 load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
   envir = .GlobalEnv)
 
-# Copy
+# Copy for modifications
 df_reduced <- df_ab_rel_Richness
+
+# Add Ref row
+new_row <- df_reduced[1, ]
+new_row[] <- NA
+new_row$Result <- list(tab_family_ref() %>% rename(Clade = family, Metric = total))
+df_reduced <- dplyr::bind_rows(df_reduced, new_row)
 
 # --------------------------------------------------
 # MODIFY
@@ -331,9 +317,9 @@ df_reduced$Result <- lapply(seq_len(nrow(df_reduced)), function(i) {
   })
 
 # Classify
-source_names <- c( "GH","ITS","18S", "Bota")
+source_names <- c( "GH","ITS","18S", "Bota","Ref")
 
-df_list <- lapply(1:4, function(i) {
+df_list <- lapply(1:5, function(i) {
   
   df <- df_reduced$Result[[i]] # Select
   
@@ -343,8 +329,8 @@ df_list <- lapply(1:4, function(i) {
 })
 
 # Combine
-df_plot_rar <-  bind_rows(df_list[c(1,2,3,4)]) %>%
-  mutate( in_bota = Clade %in% df_list[7][[1]]$Clade) %>%
+df_plot_rar <-  bind_rows(df_list) %>%
+  mutate( in_bota = Clade %in% df_list[4][[1]]$Clade) %>%
   dplyr::filter(!Metric < 0.5)
 
 # --------------------------------------------------

@@ -61,7 +61,7 @@ ab_rel_tab <- function(df_ab_rel){
   # Ordre des Sources
   df_ab_rel$Source <- factor(
     df_ab_rel$Source,
-    levels = c("Bota","GH","ITS","18S")
+    levels = c("Ref","Bota","GH","ITS","18S")
   )
   
   # Ordre des Clades
@@ -143,38 +143,106 @@ ab_rel_tab <- function(df_ab_rel){
     )
 }
 
-ab_rel_plot <- function(df_plot){
+fam_order_col <- function(df_list){
   
-  # Mettre les clades dans l'ordre alphabétique
-  df_plot <- df_plot %>%
-    mutate(Clade = factor(Clade, levels = sort(unique(Clade))))
+  ## Families share
+  # All families
+  all_fam <-  bind_rows(df_list) %>% 
+    pull(Clade) %>%
+    unique()
   
-  # Choisir l'ordre des Source
-  df_plot <- df_plot %>%
-    mutate(Source = factor(Source, levels = c("Bota","GH","ITS","18S")))
+  # Bota families
+  bota_fam <- df_list[4][[1]]$Clade
   
-  # calculer les positions exactes pour les labels
-  df_labels <- df_plot %>%
-    group_by(Source) %>%
-    arrange(Source, desc(Clade)) %>%
-    mutate(
-      ymax = cumsum(Metric),
-      ymin = ymax - Metric,
-      ymid = (ymin + ymax)/2
+  # Genet families
+  gen_fam <- bind_rows(df_list[c(1,2,3)]) %>% 
+    pull(Clade) %>%
+    unique()
+  
+  ## Growth form
+  growth_form <- growth_form_family(all_fam)
+  
+  # Linéariser
+  growth_form_long <- growth_form %>%
+    pivot_longer(
+      cols = -c(family),
+      names_to = "growth_form",
+      values_to = "Percent"
+    )
+  
+  # Extraire l'ordre par tree percent
+  tree_order <- growth_form_long %>%
+    filter(growth_form == "tree") %>%
+    arrange(desc(Percent)) %>%
+    pull(family)
+  
+  # ajouter familles sans tree
+  tree_order <- c(
+    tree_order,
+    setdiff(unique(growth_form_long$family), tree_order),
+    "<2%","Indet."
+  )
+  
+  ## FAMILIES REFERENCE
+  all_fam_df <- data.frame(
+    family = all_fam,
+    Clade = all_fam,
+    in_bota = all_fam %in% bota_fam & !all_fam %in% gen_fam,
+    in_genet = all_fam %in% gen_fam & !all_fam %in% bota_fam,
+    in_both = all_fam %in% bota_fam & all_fam %in% gen_fam) %>% 
+    mutate( # Ranks
+      color_rank = case_when(
+        Clade %in% c("<2%","Indet.") ~ 1,
+        in_bota ~ 2,
+        in_both ~ 3,
+        in_genet ~ 4
+      ),
+      tree_rank = match(family, tree_order),
+      final_rank = color_rank*100 + tree_rank # Final Rank
     ) %>%
-    ungroup() %>%
-    mutate(
+    mutate( # Family color
       Label = case_when(
         Clade %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", Clade, "</span>"),
         in_bota                      ~ paste0("<span style='color:forestgreen;'>", Clade, "</span>"),
         in_both                      ~ paste0("<span style='color:blue;'>", Clade, "</span>"),
         in_genet                     ~ paste0("<span style='color:red;'>", Clade, "</span>"))
+    ) %>%
+    mutate( # fill color
+      Color = case_when(
+        Clade %in% c("<2%","Indet.") ~ "grey50",
+        in_bota                      ~ "seagreen3",
+        in_both                      ~ "steelblue2",
+        in_genet                     ~ "indianred2")
+      )
+  
+  return(all_fam_df)
+}
+
+ab_rel_plot <- function(df_plot){
+  
+  ### ORDER AND COLOR
+  ## FAMILIES
+  # Family labels order
+  df_plot <- df_plot %>%
+    mutate( 
+      Clade = factor(
+        Clade,
+        levels = df_plot %>%
+          distinct(Clade, final_rank) %>%
+          arrange(final_rank) %>%
+          pull(Clade)
+      )
     )
   
-  # Labels vector
-  labels_vec <- setNames(df_labels$Label, df_labels$Clade)
+  # Family labels color
+  labels_vec <- setNames(df_plot$Label, df_plot$Clade)
   
-  # x labels colors
+  ## SOURCES
+  # Source labels order
+  df_plot <- df_plot %>%
+    mutate(Source = factor(Source, levels = c("Bota","GH","ITS","18S")))
+  
+  # Source labels color
   labels_source <- c(
     "Bota" = "<span style='color:forestgreen;'> Bota </span>",
     "GH" = "<span style='color:red;'> GH </span>",
@@ -182,28 +250,42 @@ ab_rel_plot <- function(df_plot){
     "18S" = "<span style='color:red;'> 18S </span>"
   )
   
+  # Labels position
+  df_plot <- df_plot %>%
+    arrange(Source, desc(final_rank)) %>%
+    group_by(Source) %>%
+    mutate(
+      ymax = cumsum(Metric),
+      ymin = ymax - Metric,
+      ymid = (ymin + ymax)/2
+    ) %>%
+    ungroup()
+  
+  # Fill color
+  color_vec <- df_plot %>%
+    distinct(Clade, Color) %>%
+    deframe()
+  
   # PLOT
   ggplot(df_plot, aes(x = Source, y = Metric, fill = Clade)) + 
     geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
     
     ggtext::geom_richtext(
-      data = df_labels,
-      aes(y = ymid, label = Label),
+      data = df_plot,
+      aes(y = ymid, x=Source, label = Label),
       fill = "white",
       label.size = 0,
       fontface = "bold.italic",
       size = 3
     ) +
     
-    scale_fill_viridis(discrete = TRUE, option = "C") +
+    scale_fill_manual(values = color_vec) +
     scale_x_discrete(labels = labels_source) +
     scale_y_continuous(labels = scales::percent_format(scale = 1)) +
     labs(
-      x = "Inventaire / Marqueur",
+      x = "",
       y = "Proportion (%)",
-      fill = "Clade",
-      title = "Abondances relatives par Famille",
-      subtitle = "En richesse botanique et richesse d'OTU"
+      fill = "Clade"
     ) +
     theme_minimal(base_size = 14) +
     theme(
@@ -215,48 +297,50 @@ ab_rel_plot <- function(df_plot){
     geom_hline(yintercept = c(25,50,75), linetype = "dashed", color="white")
 }
 
-growth_form_plot <- function(growth_form){
+growth_form_plot <- function(df_plot){
   
-  # Linéariser le dataframe
-  growth_form_long <- growth_form %>%
-    pivot_longer(
-      cols = -c(family, Clade, in_bota, in_both, in_genet),
-      names_to = "growth_form",
-      values_to = "Percent"
-    ) %>%
-    mutate(
-      color_order = case_when(
-        in_bota ~ 1,
-        in_both ~ 2,
-        in_genet ~ 3
+  ## Families Order
+  # Import
+  df_plot <- df_plot %>%
+    mutate( 
+      family = factor(
+        family,
+        levels = df_plot %>%
+          distinct(family, final_rank) %>%
+          arrange(desc(final_rank)) %>%
+          pull(family)
       )
     )
   
-  # ordre des family selon in_bota
-  family_order <- growth_form_long %>%
-    distinct(family, color_order) %>%
-    arrange(desc(color_order), desc(family)) %>%   # color_order, puis ordre alphabétique
-    pull(family)
+  # Linéariser le dataframe
+  growth_form_long <- df_plot %>%
+    pivot_longer(
+      cols = c(terrestrial,  tree, treelet, liana, shrub,  vine, epilithic, parasite, hemi.epiphyte),
+      names_to = "growth_form",
+      values_to = "Percent"
+    )
   
-  # et alphabétique
-  growth_form_long$family <- factor(
-    growth_form_long$family,
-    levels = family_order
+  # Labels to Named vector
+  labels_vec <- setNames(df_plot$Label, df_plot$family)
+  
+  ## Growth Order
+  # Import
+  tab_ref <- tab_all_growth()
+  
+  # Apply
+  growth_form_long$growth_form <- factor(
+    growth_form_long$growth_form,
+    levels = rev(rownames(tab_ref))
   )
   
-  # créer labels avec couleur conditionelles
-  label_df <- growth_form_long %>%
-    distinct(family, color_order) %>%
-    mutate(family = as.character(family)) %>%
-    mutate(
-      label = case_when(
-        family %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", family, "</span>"),
-        color_order == 1 ~ paste0("<span style='color:forestgreen;'>", family, "</span>"),
-        color_order == 2 ~ paste0("<span style='color:blue;'>", family, "</span>"),
-        color_order == 3 ~ paste0("<span style='color:red;'>", family, "</span>"))
-    )
-  # To Named vector
-  labels_vec <- setNames(label_df$label, label_df$family)
+  # Labels
+  labels_growth <- paste0(
+    rownames(tab_ref),
+    " (",
+    round(tab_ref$V1, 0),
+    "%)"
+  )
+  names(labels_growth) <- rownames(tab_ref)
   
   # PLOT
   ggplot(growth_form_long, aes(x = Percent, y = family, fill = growth_form)) + 
@@ -266,12 +350,18 @@ growth_form_plot <- function(growth_form){
       labels = labels_vec,
       guide = guide_axis(n.dodge = 1)
     ) +
+    scale_fill_viridis(
+      discrete = TRUE,
+      option = "C",
+      labels = labels_growth,
+      guide = guide_legend(reverse = TRUE),
+      begin = 0.1,
+      end = 0.9
+    )+
     labs(
       x = "Proportion (%)",
       y = "",
-      fill = "Growth Form",
-      title = "Forme de croissance végétale selon la famille",
-      subtitle = "En richesse spécifique sur l'ensemble des nouragues"
+      fill = "Growth Form"
     ) +
     theme_minimal(base_size = 14) +
     theme(
