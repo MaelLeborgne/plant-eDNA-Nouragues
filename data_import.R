@@ -6,6 +6,7 @@
 library(tidyverse) # Basic
 library(dplyr)     # Basic
 library(readxl)    # Excel
+library(writexl)   # Excel
 
 # ===== Source =====
 PROJECT_PATH = "/home/jean/Bureau/ADNe_Nourague_2026/"
@@ -178,7 +179,8 @@ import_plants_nouragues <- function(){
   setwd(paste0(PROJECT_PATH,"data/Zinger_plants_nouragues/METABAR_plantes/metadata/"))
   
   # Read XLS
-  data <- read_excel("Plants_Nouragues2001.xls")
+  data <- read_excel("Plants_Nouragues2001.xls") %>%
+    dplyr::filter(habit.highforest == 1)
   
   return(data)
 }

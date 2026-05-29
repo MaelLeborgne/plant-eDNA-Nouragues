@@ -151,6 +151,9 @@ fam_order_col <- function(df_list){
     pull(Clade) %>%
     unique()
   
+  # Ref families
+  ref_fam <- df_list[5][[1]]$Clade
+  
   # Bota families
   bota_fam <- df_list[4][[1]]$Clade
   
@@ -189,36 +192,44 @@ fam_order_col <- function(df_list){
     Clade = all_fam,
     in_bota = all_fam %in% bota_fam & !all_fam %in% gen_fam,
     in_genet = all_fam %in% gen_fam & !all_fam %in% bota_fam,
-    in_both = all_fam %in% bota_fam & all_fam %in% gen_fam) %>% 
+    in_both = all_fam %in% bota_fam & all_fam %in% gen_fam
+    ) %>% 
+    mutate(
+      in_ref = all_fam %in% ref_fam & !in_bota & !in_genet & !in_both
+    )%>%
     mutate( # Ranks
       color_rank = case_when(
         Clade %in% c("<2%","Indet.") ~ 1,
         in_bota ~ 2,
         in_both ~ 3,
-        in_genet ~ 4
+        in_genet ~ 4,
+        in_ref  ~ 5
       ),
       tree_rank = match(family, tree_order),
-      final_rank = color_rank*100 + tree_rank # Final Rank
+      tree_rank = ifelse(is.na(tree_rank), max(match(family, tree_order), na.rm = TRUE) + 1, tree_rank),
+      final_rank = color_rank*1000 + tree_rank # Final Rank
     ) %>%
     mutate( # Family color
       Label = case_when(
         Clade %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", Clade, "</span>"),
         in_bota                      ~ paste0("<span style='color:forestgreen;'>", Clade, "</span>"),
         in_both                      ~ paste0("<span style='color:blue;'>", Clade, "</span>"),
-        in_genet                     ~ paste0("<span style='color:red;'>", Clade, "</span>"))
+        in_genet                     ~ paste0("<span style='color:red;'>", Clade, "</span>"),
+        in_ref                       ~ paste0("<span style='color:orange;'>", Clade, "</span>"))
     ) %>%
     mutate( # fill color
       Color = case_when(
         Clade %in% c("<2%","Indet.") ~ "grey50",
         in_bota                      ~ "seagreen3",
         in_both                      ~ "steelblue2",
-        in_genet                     ~ "indianred2")
+        in_genet                     ~ "indianred2",
+        in_ref                       ~ "orange")
       )
   
   return(all_fam_df)
 }
 
-ab_rel_plot <- function(df_plot){
+ab_rel_plot <- function(df_plot, treshold_label = 4){
   
   ### ORDER AND COLOR
   ## FAMILIES
@@ -240,10 +251,11 @@ ab_rel_plot <- function(df_plot){
   ## SOURCES
   # Source labels order
   df_plot <- df_plot %>%
-    mutate(Source = factor(Source, levels = c("Bota","GH","ITS","18S")))
+    mutate(Source = factor(Source, levels = c("REF","Bota","GH","ITS","18S")))
   
   # Source labels color
   labels_source <- c(
+    "REF" = "<span style='color:orange;'> REF </span>",
     "Bota" = "<span style='color:forestgreen;'> Bota </span>",
     "GH" = "<span style='color:red;'> GH </span>",
     "ITS" = "<span style='color:red;'> ITS </span>",
@@ -268,11 +280,11 @@ ab_rel_plot <- function(df_plot){
   
   # PLOT
   ggplot(df_plot, aes(x = Source, y = Metric, fill = Clade)) + 
-    geom_bar(stat = "identity", position = "stack", color = "black", size = 0.2) +
+    geom_bar(stat = "identity", position = "stack", color = "black", linewidth = 0.2) +
     
     ggtext::geom_richtext(
-      data = df_plot,
-      aes(y = ymid, x=Source, label = Label),
+      data = df_plot %>% filter(Metric > treshold_label),
+      aes(x = Source, y = ymid, label = Label),
       fill = "white",
       label.size = 0,
       fontface = "bold.italic",
@@ -330,17 +342,17 @@ growth_form_plot <- function(df_plot){
   # Apply
   growth_form_long$growth_form <- factor(
     growth_form_long$growth_form,
-    levels = rev(rownames(tab_ref))
+    levels = rev(tab_ref$type)
   )
   
   # Labels
   labels_growth <- paste0(
-    rownames(tab_ref),
+    tab_ref$type,
     " (",
     round(tab_ref$V1, 0),
     "%)"
   )
-  names(labels_growth) <- rownames(tab_ref)
+  names(labels_growth) <- tab_ref$type
   
   # PLOT
   ggplot(growth_form_long, aes(x = Percent, y = family, fill = growth_form)) + 

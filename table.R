@@ -339,7 +339,8 @@ tab_all_growth <- function(){
     rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
     t() %>%
     as.data.frame() %>%
-    arrange(desc(V1))
+    arrange(desc(V1)) %>%
+    tibble::rownames_to_column("type")
 }
 
 tab_family_growth <- function(){

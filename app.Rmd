@@ -36,10 +36,8 @@ source("plots.R")
 ## 1. Intersection table (OK)
 
 ```{r}
-
 library(dplyr)
 library(purrr)
-library(UpSetR)
 
 # --------------------------------------------------
 # Datasets
@@ -68,20 +66,39 @@ config_tab$tax_list <- map2(
 list_by_level <- config_tab %>%
   split(.$Level) %>%
   map(~ setNames(.x$tax_list, .x$Marker))
+```
 
-# --------------------------------------------------
-# Clean lists
-# --------------------------------------------------
 
-# list_by_level_clean <- map(
-#   list_by_level,
-#   ~ map(.x, extract_names) %>%
-#       map(clean_names)
-# )
+### Venn diagram
+
+```{r}
+library(ggVennDiagram)
+library(ggplot2)
+
+plot_list <- lapply(names(list_by_level), function(lvl){
+  data <- list_by_level[[lvl]]
+  
+  col <- switch(lvl,
+                "Family"  = "darkorange",
+                "Genus"   = "steelblue",
+                "Species" = "forestgreen")
+  
+  ggVennDiagram(data) +
+    scale_fill_gradient(low = "white", high = col) +
+    ggtitle(lvl)
+})
+
+plot_list
+```
+
+### Upset
+
+```{r}
 
 # --------------------------------------------------
 # Plots
 # --------------------------------------------------
+library(UpSetR)
 
 # Size of total numbers
 set_size <- list("Family"=200, "Genus"=600, "Species"=1600)
@@ -104,6 +121,155 @@ plot_list <- lapply(names(list_by_level), function(lvl){
 
 # Display
 plot_list
+
+```
+### Flow plot (type Sankey)
+
+```{r}
+inv <- list(
+  T1 = c("A","B","C","D"),
+  T2 = c("B","C","D","E"),
+  T3 = c("C","D","E","F"),
+  T4 = c("D","E","F","G")
+)
+
+library(ggalluvial)
+
+df <- bind_rows(lapply(names(inv), function(t){
+  data.frame(inventaire = t, species = inv[[t]])
+}))
+
+ggplot(df,
+       aes(x = inventaire, stratum = species, alluvium = species, fill = species)) +
+  geom_flow() +
+  geom_stratum() +
+  theme_minimal()
+```
+
+
+### Type time line
+```{r}
+
+
+df_long <- bind_rows(lapply(names(list_by_level[["Family"]]), function(inv){
+    data.frame(
+      time = inv,
+      species = list_by_level[["Family"]][[inv]]
+    )
+  }))
+
+
+library(tidyr)
+library(dplyr)
+
+# df_long : time / species
+mat <- df_long %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = species,
+              values_from = value,
+              values_fill = 0)
+
+library(vegan)
+
+mat_num <- as.matrix(mat[,-1])
+
+ord <- metaMDS(mat_num, distance = "bray")
+
+# ordre des sites
+site_order <- order(ord$points[,1])
+
+# ordre des espèces
+sp_order <- order(scores(ord, display="species")[,1])
+
+mat_ord <- mat_num[site_order, sp_order]
+
+library(ggplot2)
+library(reshape2)
+
+df_plot <- melt(mat_ord)
+
+df_plot$value <- factor(df_plot$value)
+
+ggplot(df_plot, aes(x = Var2, y = Var1, fill = value)) +
+  geom_tile() +
+  scale_fill_manual(values = c("white", "black")) +
+  theme_minimal() +
+  labs(x = "Species", y = "Sites")
+```
+### Markov network
+
+```{r}
+# ==== Inventaires ==== 
+inv <- list(
+  REF = c("A","B","C","D"),
+  Bota = c("B","C","D"),
+  GH = c("C","D","E"),
+  ITS = c("D","E","F"),
+  `18S` = c("F")
+)
+
+# ==== Markov ====
+
+edges <- data.frame()
+
+times <- names(inv)
+
+for(i in 1:(length(times)-1)){
+  for(j in (i+1):length(times)){
+    
+    a <- inv[[i]]
+    b <- inv[[j]]
+    
+    edges <- rbind(edges, data.frame(
+      from = times[i],
+      to   = times[j],
+      shared = length(intersect(a,b)),
+      gain   = length(setdiff(b,a)),
+      loss   = length(setdiff(a,b))
+    ))
+  }
+}
+
+nodes <- data.frame(
+  name = names(inv),
+  richness = sapply(inv, length)
+)
+
+library(igraph)
+
+g <- graph_from_data_frame(edges, vertices = nodes)
+
+V(g)$label <- nodes$richness
+V(g)$label.cex <- 1
+
+E(g)$label <- edges$shared
+
+
+library(ggraph)
+library(ggrepel)
+
+ggraph(g, layout = "kk") +  # ou "tree", "circle"
+  geom_edge_link(aes(width = shared), alpha = 0.6) +
+  
+  geom_node_point(aes(size = richness)) +
+  
+  # labels internes (richesse)
+  geom_node_text(aes(label = richness), color = "black") +
+  
+  # labels externes (T1, T2...)
+  geom_node_text(aes(label = name),
+                 repel = TRUE,   # 🔥 magique
+                 fontface = "bold") +
+  
+  theme_void()
+
+plot(g,
+     vertex.size = nodes$richness * 10,
+     vertex.label = nodes$richness,   # intérieur
+     vertex.label.cex = 1.2,
+     vertex.label.color = "black"
+)
+
 
 ```
 
@@ -202,6 +368,7 @@ p1 | p2
 
 # General table
 tab_all_growth() # %>% view()
+write_xlsx(tab_all_growth(), "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/tab_all_growth.xlsx")
 
 # Table by family
 tab_family_growth() # %>% view()
@@ -230,18 +397,27 @@ load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
 
 df_reduced <- df_ab_rel_Richness
 
-df_reduced$Result <- lapply(seq_len(nrow(df_reduced)), function(i) {
-    df_reduced$Result[[i]] %>% percent_other("Clade", "Metric", 2)
-  })
+# Add Ref row
+new_row <- df_reduced[1, ]
+new_row[] <- NA
+new_row$Result <- list(tab_family_ref() %>% rename(Clade = family, Metric = total))
+df_reduced <- dplyr::bind_rows(df_reduced, new_row)
+
+# df_reduced$Result <- lapply(seq_len(nrow(df_reduced)), function(i) {
+#     df_reduced$Result[[i]] %>% percent_other("Clade", "Metric", 2)
+#   })
+
+# --------------------------------------------------
+# LIST
+# --------------------------------------------------
 
 # Liste des indices correspondant aux différentes sources
-source_indices <- c(1, 2, 3, 4)
-source_names <- c( "GH", "ITS", "18S", "Bota")
+source_names <- c( "GH", "ITS", "18S", "Bota", "REF")
 
 # Appliquer une fonction à chaque élément de la liste df_reduced$Result
-df_list <- lapply(seq_along(source_indices), function(i) {
+df_list <- lapply(seq_along(source_names), function(i) {
   # Extraire le dataframe correspondant
-  df_temp <- df_reduced$Result[[source_indices[i]]]
+  df_temp <- df_reduced$Result[[i]]
   
   # Ajouter la colonne Source
   df_temp$Source <- source_names[i]
@@ -269,7 +445,12 @@ p1 <- ab_rel_plot(df_ab_rel)
 # GROWTH TYPE
 # --------------------------------------------------
 
-df_growth <- growth_form_family(all_fam_df$family) %>%
+fam_list <- df_ab_rel %>%
+  dplyr::filter(!Metric < 4 & Clade != "Indet.") %>%
+  pull(Clade) %>%
+  unique()
+
+df_growth <- growth_form_family(fam_list) %>%
   left_join(all_fam_df, by = "family")
 
 # Plot
@@ -283,7 +464,7 @@ p2 <- growth_form_plot(df_growth)
 
 ```
 
-### B. Annexe Table (+ ref Nouragues)
+### B. Annexe Table (OK)
 
 ```{r}
 
