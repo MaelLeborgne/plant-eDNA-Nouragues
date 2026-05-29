@@ -439,19 +439,21 @@ df_ab_rel <- bind_rows(df_list) %>%
   left_join(all_fam_df, by = "Clade")
 
 # Plot
-p1 <- ab_rel_plot(df_ab_rel)
+p1 <- ab_rel_plot(df_ab_rel, treshold_label = 10)
 
 # --------------------------------------------------
 # GROWTH TYPE
 # --------------------------------------------------
 
-fam_list <- df_ab_rel %>%
-  dplyr::filter(!Metric < 4 & Clade != "Indet.") %>%
-  pull(Clade) %>%
-  unique()
+# fam_list <- df_ab_rel %>%
+#   dplyr::filter(!Metric < 4 & Clade != "Indet.") %>%
+#   pull(Clade) %>%
+#   unique()
 
-df_growth <- growth_form_family(fam_list) %>%
-  left_join(all_fam_df, by = "family")
+# df_growth <- growth_form_family(fam_list) %>%
+#   left_join(all_fam_df, by = "family")
+
+df_growth <- growth_form_source(df_ab_rel)
 
 # Plot
 p2 <- growth_form_plot(df_growth)

@@ -212,10 +212,10 @@ fam_order_col <- function(df_list){
     mutate( # Family color
       Label = case_when(
         Clade %in% c("<2%","Indet.") ~ paste0("<span style='color:black;'>", Clade, "</span>"),
-        in_bota                      ~ paste0("<span style='color:forestgreen;'>", Clade, "</span>"),
-        in_both                      ~ paste0("<span style='color:blue;'>", Clade, "</span>"),
-        in_genet                     ~ paste0("<span style='color:red;'>", Clade, "</span>"),
-        in_ref                       ~ paste0("<span style='color:orange;'>", Clade, "</span>"))
+        in_bota                      ~ paste0("<span style='color:forestgreen;'>", toupper(substr(Clade, 1, 3)), "</span>"),
+        in_both                      ~ paste0("<span style='color:blue;'>", toupper(substr(Clade, 1, 3)), "</span>"),
+        in_genet                     ~ paste0("<span style='color:red;'>", toupper(substr(Clade, 1, 3)), "</span>"),
+        in_ref                       ~ paste0("<span style='color:brown;'>", toupper(substr(Clade, 1, 3)), "</span>"))
     ) %>%
     mutate( # fill color
       Color = case_when(
@@ -229,7 +229,7 @@ fam_order_col <- function(df_list){
   return(all_fam_df)
 }
 
-ab_rel_plot <- function(df_plot, treshold_label = 4){
+ab_rel_plot <- function(df_plot, treshold_label = 10){
   
   ### ORDER AND COLOR
   ## FAMILIES
@@ -311,18 +311,10 @@ ab_rel_plot <- function(df_plot, treshold_label = 4){
 
 growth_form_plot <- function(df_plot){
   
-  ## Families Order
-  # Import
+  ## SOURCES
+  # Source labels order
   df_plot <- df_plot %>%
-    mutate( 
-      family = factor(
-        family,
-        levels = df_plot %>%
-          distinct(family, final_rank) %>%
-          arrange(desc(final_rank)) %>%
-          pull(family)
-      )
-    )
+    mutate(Source = factor(Source, levels = rev(c("REF","Bota","GH","ITS","18S"))))
   
   # Linéariser le dataframe
   growth_form_long <- df_plot %>%
@@ -331,9 +323,17 @@ growth_form_plot <- function(df_plot){
       names_to = "growth_form",
       values_to = "Percent"
     )
+  # Check 100%
+  # growth_form_long %>% group_by(Source) %>% summarise(Percent = sum(Percent))
   
-  # Labels to Named vector
-  labels_vec <- setNames(df_plot$Label, df_plot$family)
+  # Source labels color
+  labels_source <- c(
+    "REF" = "<span style='color:orange;'> REF </span>",
+    "Bota" = "<span style='color:forestgreen;'> Bota </span>",
+    "GH" = "<span style='color:red;'> GH </span>",
+    "ITS" = "<span style='color:red;'> ITS </span>",
+    "18S" = "<span style='color:red;'> 18S </span>"
+  )
   
   ## Growth Order
   # Import
@@ -355,11 +355,11 @@ growth_form_plot <- function(df_plot){
   names(labels_growth) <- tab_ref$type
   
   # PLOT
-  ggplot(growth_form_long, aes(x = Percent, y = family, fill = growth_form)) + 
+  ggplot(growth_form_long, aes(x = Percent, y = Source, fill = growth_form)) + 
     geom_bar(stat = "identity", position = "stack", color = "black") +
     scale_x_continuous(labels = scales::percent_format(scale = 1)) +
     scale_y_discrete(
-      labels = labels_vec,
+      labels = labels_source,
       guide = guide_axis(n.dodge = 1)
     ) +
     scale_fill_viridis(

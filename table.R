@@ -330,6 +330,20 @@ growth_form_family <- function(fam_vec){
     inner_join(fam_df, by="family")
 }
 
+growth_form_source <- function(df_ab_rel){
+  
+  df_growth <- import_plants_nouragues() %>%
+    rename(Clade = family)
+  
+  df_ab_rel %>% 
+    left_join( df_growth, by = "Clade") %>%
+    mutate(across(starts_with("stat."), ~ .x * Metric)) %>%
+    group_by(Source) %>%
+    summarise(across(starts_with("stat."), ~ sum(.x, na.rm = TRUE))) %>%
+    mutate(across(starts_with("stat."), ~ .x / rowSums(across(starts_with("stat."))) * 100)) %>%
+    rename_with(~ sub("^stat\\.", "", .x), starts_with("stat."))
+}
+
 tab_all_growth <- function(){
   
   # Return : all growth type table
