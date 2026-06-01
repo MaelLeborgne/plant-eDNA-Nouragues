@@ -81,9 +81,9 @@ select_clust <- function(config){
   
   # Select Marker
   data <- switch (config$Marker,
-    "GH" = readRDS("GH_mblist_annot_metabar_clean_clust97.rds"),
-    "18S"= readRDS("18s_mblist_annot_metabar_clean.rds"),
-    "ITS"= readRDS("GH_mblist_annot_metabar_clean_clust97.rds"),
+    "Sper01" = readRDS("Sper01_mblist_annot_metabar_clean_clust97.rds"),
+    "18S"= readRDS("18S_mblist_annot_metabar_clean.rds"),
+    "ITS2"= readRDS("ITS2_mblist_annot_metabar_clean_clust97.rds"),
     stop("Unknown Marker: ", config$Marker)
   )
   
@@ -98,9 +98,9 @@ select_rar <- function(config){
   
   # Select Marker
   data <- switch (config$Marker,
-                  "GH" = readRDS("GH_mblist_annot_metabar_clean_clust97_RAR.rds"),
+                  "Sper01" = readRDS("Sper01_mblist_annot_metabar_clean_clust97_RAR.rds"),
                   "18S"= readRDS("18S_mblist_annot_metabar_clean_clust97_RAR.rds"),
-                  "ITS"= readRDS("ITS_mblist_annot_metabar_clean_clust97_RAR.rds"),
+                  "ITS2"= readRDS("ITS2_mblist_annot_metabar_clean_clust97_RAR.rds"),
                   stop("Unknown Marker: ", config$Marker)
   )
   

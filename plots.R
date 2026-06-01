@@ -61,7 +61,7 @@ ab_rel_tab <- function(df_ab_rel){
   # Ordre des Sources
   df_ab_rel$Source <- factor(
     df_ab_rel$Source,
-    levels = c("Ref","Bota","GH","ITS","18S")
+    levels = c("Ref","Bota","Sper01","ITS2","18S")
   )
   
   # Ordre des Clades
@@ -251,14 +251,14 @@ ab_rel_plot <- function(df_plot, treshold_label = 10){
   ## SOURCES
   # Source labels order
   df_plot <- df_plot %>%
-    mutate(Source = factor(Source, levels = c("REF","Bota","GH","ITS","18S")))
+    mutate(Source = factor(Source, levels = c("REF","Bota","Sper01","ITS2","18S")))
   
   # Source labels color
   labels_source <- c(
     "REF" = "<span style='color:orange;'> REF </span>",
     "Bota" = "<span style='color:forestgreen;'> Bota </span>",
-    "GH" = "<span style='color:red;'> GH </span>",
-    "ITS" = "<span style='color:red;'> ITS </span>",
+    "Sper01" = "<span style='color:red;'> Sper01 </span>",
+    "ITS2" = "<span style='color:red;'> ITS2 </span>",
     "18S" = "<span style='color:red;'> 18S </span>"
   )
   
@@ -314,7 +314,7 @@ growth_form_plot <- function(df_plot){
   ## SOURCES
   # Source labels order
   df_plot <- df_plot %>%
-    mutate(Source = factor(Source, levels = rev(c("REF","Bota","GH","ITS","18S"))))
+    mutate(Source = factor(Source, levels = rev(c("REF","Bota","Sper01","ITS2","18S"))))
   
   # Linéariser le dataframe
   growth_form_long <- df_plot %>%
@@ -330,8 +330,8 @@ growth_form_plot <- function(df_plot){
   labels_source <- c(
     "REF" = "<span style='color:orange;'> REF </span>",
     "Bota" = "<span style='color:forestgreen;'> Bota </span>",
-    "GH" = "<span style='color:red;'> GH </span>",
-    "ITS" = "<span style='color:red;'> ITS </span>",
+    "Sper01" = "<span style='color:red;'> Sper01 </span>",
+    "ITS2" = "<span style='color:red;'> ITS2 </span>",
     "18S" = "<span style='color:red;'> 18S </span>"
   )
   
@@ -394,12 +394,12 @@ plot_bias_growth <- function(df_bias, ref_tab){
   ## inventory
   df_bias$inventory <- factor(
     df_bias$inventory,
-    levels = c("18S","ITS","GH","BOTA")
+    levels = c("18S","ITS2","Sper01","BOTA")
   )
   ## growth form
   df_bias$growth <- factor(
     df_bias$growth,
-    levels = rownames(ref_tab)
+    levels = ref_tab$type
   )
   
   # Plots
@@ -475,7 +475,7 @@ corr_tab_plot <- function(config_tab){
   
   config_tab$g.Marker <- factor(
     config_tab$g.Marker,
-    levels = c("GH","ITS","18S")
+    levels = c("Sper01","ITS2","18S")
   )
   
   # clean data
@@ -524,10 +524,13 @@ corr_tab_plot <- function(config_tab){
 
 corr_violin_plot <- function(config_tab){
   
+  config_tab <- config_tab %>%
+    dplyr::select(g.Marker, Level, Metric_corr, Name, Correlation)
+  
   # ordre des colonnes (Metric)
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("NCI","Count","T+","T-","MCC")
+    levels = c("NCI","Hyp","Count","T+","T-","MCC")
   )
   
   # ordre des lignes (Level)
@@ -818,7 +821,9 @@ plot_grid <- function(grid, stems = FALSE) {
     coord_fixed() +
     theme_minimal() +
     labs(fill = NULL) +
-    scale_fill_viridis_c(option = "turbo") +
+    scale_fill_viridis_c(option = "turbo",
+                         breaks = c(round(min(df$Metric, na.rm = TRUE),digits = 3),
+                                    round(max(df$Metric, na.rm = TRUE),digits = 3))) +
     theme(
       plot.title = element_text(
         hjust = 0.5,   # centre horizontalement
@@ -829,7 +834,7 @@ plot_grid <- function(grid, stems = FALSE) {
       axis.ticks = element_blank(),
       panel.grid = element_blank(),
       legend.position = "bottom",  # légende sous le plot
-      legend.margin = margin(t = -10)
+      legend.margin = ggplot2::margin(t=-10)
     )
   
   # Ajouter les stems si demandé
@@ -1015,7 +1020,7 @@ patch_turbo_family <- function(factor = 1){
   basic_config <- list(
     Type = "genet",
     Rar = FALSE,
-    Marker = "GH",
+    Marker = "Sper01",
     Metric = "OTU",
     Level = "Family"
   )
@@ -1152,7 +1157,7 @@ patch_turbo_species_ex <- function(N_patch){
   common_sp <- df_corr_tot %>%
     dplyr::filter(
       Level %in% c("Species"),
-      g.Marker %in% c("GH"),
+      g.Marker %in% c("Sper01"),
       Metric_corr %in% c("NCI")
     ) %>%
     dplyr::select(Name,Correlation) %>%
@@ -1171,7 +1176,7 @@ patch_turbo_species_ex <- function(N_patch){
     genet_grid <- grid_read(list(
       "Type" = "genet",
       "Rar" = TRUE,
-      "Marker" = "GH",
+      "Marker" = "Sper01",
       "Level" = "Species",
       "Name" = sp,
       "Metric" = "Reads"
@@ -1241,7 +1246,7 @@ patch_turbo_species_ex <- function(N_patch){
 patch_turbo_species_years <- function(Year1, Year2){
   
   # Import Genet species
-  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "GH")
+  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "Sper01")
   
   # Import bota species
   bota1 <- import_bota(list("Year" = Year1))
@@ -1271,7 +1276,7 @@ patch_turbo_species_years <- function(Year1, Year2){
     genet_config <- list(
       "Type" = "genet",
       "Rar" = TRUE,
-      "Marker" = "GH",
+      "Marker" = "Sper01",
       "Level" = "Species",
       "Name" = sp,
       "Metric" = "Reads"
@@ -1349,7 +1354,7 @@ patch_turbo_species_years <- function(Year1, Year2){
   # +
   #   plot_annotation(
   #     title = "Comparaison des Inventaires botaniques de 2012 et 2022 avec l'emprunte ADNe",
-  #     subtitle = "Au niveau specifique pour le marqueur GH",
+  #     subtitle = "Au niveau specifique pour le marqueur Sper01",
   #     theme = theme(
   #       plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
   #       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
@@ -1389,7 +1394,7 @@ morpho_corr_bar <- function(){
   model <- tab_rar %>%
     filter(
       Level == "Species",
-      g.Marker == "GH",
+      g.Marker == "Sper01",
       Metric_corr == "NCI"
     ) %>%
     dplyr::select(Name, Correlation) %>%
@@ -1437,7 +1442,7 @@ morpho_corr_bar <- function(){
     theme_minimal(base_size = 14) +
     labs(
       title = "Corrélation des traits morphologique avec le modèle",
-      subtitle = "au niveau specifique pour le marker GH",
+      subtitle = "au niveau specifique pour le marker Sper01",
       x = "",
       y = "Pearson r",
       fill = "r"
@@ -1458,7 +1463,7 @@ morpho_corr_bar <- function(){
 multi_filter_flow <- function(){
   
   # Init
-  markers <- c("GH","18S","ITS")
+  markers <- c("Sper01","18S","ITS2")
   df_list <- list()
   # Loop on markers
   for(marker in markers){
@@ -1508,7 +1513,7 @@ multi_filter_flow <- function(){
     ) %>% 
       mutate(`%` = (n*100) / nrow(df)) %>%
       mutate(step = fct_reorder(step, n, .desc = TRUE)) %>%
-      mutate(Marker = factor(Marker, levels = c("GH", "18S", "ITS")))
+      mutate(Marker = factor(Marker, levels = c("Sper01", "18S", "ITS2")))
     # Store in df_list
     df_list[[marker]] <- filter_steps
   }

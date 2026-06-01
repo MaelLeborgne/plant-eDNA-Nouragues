@@ -11,6 +11,7 @@ library(tibble)  # Tibble class
 library(stringr) # Work on string
 library(purrr)   # pmap_int()
 library(vegan)   # OTU diversity
+library(terra)
 
 # ===== INIT GRID =====
 
@@ -50,6 +51,58 @@ init_grid <- function(config, filters = list()){
   grid$filters <- filters
   
   return(grid)
+}
+
+grid_normalize <- function(df){
+  df$Metric <- df$Metric / sum(df$Metric)
+  return(df)
+}
+
+grid_logaritmize <- function(df){
+  df$Metric <- log(df$Metric+1)
+  return(df)
+}
+
+grid_filtering <- function(df){
+  
+  library(terra)
+  
+  # 1. xtabs
+  mat <- xtabs(Metric ~ x + y, data = df)
+  
+  # 2. CONVERSION FORCÉE (clé)
+  mat <- as.matrix(mat)
+  mat <- unclass(mat)
+  
+  # 3. raster
+  mat <- t(mat)
+  r <- terra::rast(mat)
+  terra::ext(r) <- c(
+    min(df$x), max(df$x),
+    min(df$y), max(df$y)
+  )
+  
+  # 4. filtre médian
+  r_filt <- terra::focal(
+    r,
+    w = matrix(1, 3, 3),
+    fun = median,
+    na.rm = TRUE
+  )
+  
+  # 5. retour data.frame
+  df_filt <- as.data.frame(r_filt, xy = TRUE)
+  names(df_filt)[3] <- "Metric"
+  
+  # 6. remettre sample_loc
+  df_filt <- merge(
+    df_filt,
+    df[, c("x", "y", "sample_loc")],
+    by = c("x", "y"),
+    all.x = TRUE
+  )
+  
+  return(df_filt)
 }
 
 # ==== TAXA FILTERS ====
@@ -152,6 +205,9 @@ get_neighbors <- function(px, py, B, R){
   dij <- sqrt((px - B$Xfield)^2 +
                 (py - B$Yfield)^2)
   
+  dij[dij > 100] <- 100
+  dij[dij < 0.1] <- 0.1
+  
   if (R == "pixel") {
     sel <- which(B$Xfield > px-5 &
                    B$Xfield < px+5 &
@@ -196,6 +252,24 @@ bota_grid_read <- function(grid, filters = list()) {
                            "OTU"      = rowSums(mat > 0),
                            "Shannon"  = vegan::diversity(mat, index="shannon"),
                            "H1"       = exp(vegan::diversity(mat, index="shannon")),
+                           "Hyp"      = {
+                             df <- G$df
+                             
+                             sapply(1:nrow(df), function(pixel){
+                               
+                               px <- df$x[pixel]
+                               py <- df$y[pixel]
+                               
+                               res <- get_neighbors(px, py, B, R=10000)
+                               sel <- res$sel
+                               dij <- res$dij
+                               
+                               if (length(sel) == 0) return(0)
+                               
+                               sum(((B$CircCorr[sel]/pi)^C$Beta) / dij[sel],
+                                   na.rm = TRUE)
+                             })
+                           },
                            "NCI" = {
                              df <- G$df
                              
@@ -217,6 +291,21 @@ bota_grid_read <- function(grid, filters = list()) {
                            },
                            stop("Unknown Metric: ", M)
   )
+  
+  # Logaritmization
+  if(isTRUE(C$Log)){
+    grid$df <- grid$df %>% grid_logaritmize()
+  }
+  
+  # Filtrage
+  if(isTRUE(C$Filt)){
+    grid$df <- grid$df %>% grid_filtering()
+  }
+  
+  # Normalization
+  if(isTRUE(C$Norm)){
+    grid$df <- grid$df %>% grid_normalize()
+  }
   
   # Return
   return(grid)
@@ -295,6 +384,21 @@ genet_grid_read <- function(grid, filters = list()){
   grid$df <- grid$df %>%
     mutate(Metric = coalesce(Metric.y, Metric.x)) %>%
     dplyr::select(-Metric.x, -Metric.y)
+  
+  # Logaritmization
+  if(isTRUE(C$Log)){
+    grid$df <- grid$df %>% grid_logaritmize()
+  }
+  
+  # Filtrage
+  if(isTRUE(C$Filt)){
+    grid$df <- grid$df %>% grid_filtering()
+  }
+  
+  # Normalization
+  if(isTRUE(C$Norm)){
+    grid$df <- grid$df %>% grid_normalize()
+  }
   
   return(grid)
 }

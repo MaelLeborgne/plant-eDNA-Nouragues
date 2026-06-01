@@ -46,7 +46,7 @@ get_ab_tib <- function(level, marker){
     )
   }
   
-  if(marker %in% c("GH", "ITS", "18S")){
+  if(marker %in% c("Sper01", "ITS2", "18S")){
     
     df <- import_genet(
       list(
@@ -83,7 +83,7 @@ get_tax_list <- function(Level, Marker){
     )
   }
   # Genet
-  if(Marker %in% c("GH", "ITS", "18S")){
+  if(Marker %in% c("Sper01", "ITS2", "18S")){
     df <- import_genet(
       list(
         Marker = Marker,
@@ -388,7 +388,7 @@ tab_family_ref <- function(){
 bias_assign <- function(df){
   df_long <- df %>%
     pivot_longer(
-      cols = c(REF, GH, ITS, `18S`, BOTA),
+      cols = c(REF, Sper01, ITS2, `18S`, BOTA),
       names_to = "inventory",
       values_to = "i"
     )
@@ -400,7 +400,7 @@ bias_assign <- function(df){
   df_lr <- df_long %>%
     dplyr::filter(inventory != "REF") %>%
     dplyr::left_join(ref, by = "Clade") %>%
-    dplyr::mutate(log_ratio = i/i_ref)#log((i + 1e-7) / (i_ref + 1e-7)))
+    dplyr::mutate(log_ratio = i/i_ref)
   
   
   df_growth <- df_lr %>%
@@ -417,6 +417,54 @@ bias_assign <- function(df){
     )
   
   return(df_bias)
+}
+
+bias_assign_new <- function(){
+  # LOAD
+  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
+       envir = .GlobalEnv)
+  
+  # ADD REF
+  new_row <- df_ab_rel_Richness[1, ]
+  new_row[] <- NA
+  new_row$Result <- list(tab_family_ref() %>% rename(Clade = family, Metric = total))
+  df_ab_rel_Richness <- dplyr::bind_rows(df_ab_rel_Richness, new_row)
+  
+  # LIST
+  
+  # Liste des indices correspondant aux différentes sources
+  source_names <- c( "Sper01", "ITS2", "18S", "Bota", "REF")
+  
+  # Appliquer une fonction à chaque élément de la liste df_reduced$Result
+  df_list <- lapply(seq_along(source_names), function(i) {
+    # Extraire le dataframe correspondant
+    df_temp <- df_ab_rel_Richness$Result[[i]]
+    
+    # Ajouter la colonne Source
+    df_temp$Source <- source_names[i]
+    
+    return(df_temp)
+  })
+  
+  # MAKE FAMILIES REFERENCE
+  all_fam_df <- fam_order_col(df_list)
+  
+  # ABUNDANCE
+  df_ab_rel <- bind_rows(df_list) %>%
+    left_join(all_fam_df, by = "Clade")
+  
+  # GROWTH TYPE
+  df_growth <- growth_form_source(df_ab_rel)
+  
+  df_growth %>%
+    mutate(across(-Source, ~ . / .[Source == "REF"]))%>%
+     pivot_longer(
+         c(-Source),
+         names_to = "growth",
+         values_to = "bias"
+       ) %>%
+    dplyr::filter(Source != "REF") %>%
+    rename(inventory = Source)
 }
 
 # ===== 2. SPATIAL PATTERNS =====
@@ -491,7 +539,7 @@ give_common_taxa <- function(Rar, Level) {
     pull(.data[[Level]]) %>%
     unique()
   
-  markers <- c("GH", "ITS", "18S")
+  markers <- c("Sper01", "ITS2", "18S")
   
   # Intersections avec chaque marker
   common_list <- lapply(markers, function(m) {
@@ -504,13 +552,7 @@ give_common_taxa <- function(Rar, Level) {
 
 # ---- Correlation ----
 
-make_cor_table_spatial <- function(config_tab, level_list){
-    
-  # Add Name by Level
-  config_tab <- config_tab %>%
-    rowwise() %>%
-    mutate(Name = list(level_list[[Level]])) %>%  # Créer une liste de name
-    unnest(Name)                        # transformer la liste en lignes
+make_cor_table_spatial <- function(config_tab){
   
   # Initialisation to zero
   config_tab$Correlation <- 0 
@@ -528,7 +570,7 @@ make_cor_table_spatial <- function(config_tab, level_list){
 grid_correlation <- function(row){
   
   # Split Metric_corr cases
-  if(row$Metric_corr %in% c("Count","NCI")){
+  if(row$Metric_corr %in% c("Count","NCI","Hyp")){
     row$b.Metric <- row$Metric_corr  # Bota
     row$g.Metric <- "Reads"          # Génèt
   }
@@ -569,6 +611,7 @@ grid_correlation <- function(row){
   grid_corr <- switch(row$Metric_corr,
                       "Count" = cor(B$Metric, G$Metric, method="spearman"),
                       "NCI"   = cor(B$Metric, G$Metric, method="spearman"),
+                      "Hyp"   = cor(B$Metric, G$Metric, method="spearman"),
                       "OTU"   = cor(B$Metric, G$Metric, method="spearman"),
                       "T+"    = Tp, # True positive
                       "T-"    = Tn, # True negative
@@ -587,7 +630,7 @@ grid_correlation <- function(row){
 extract_configs <- function(row) {
   
   # Colonnes botaniques : celles qui commencent par b. ou Level / Name
-  b_cols <- grep("^b\\.|Level|Name", names(row), value = TRUE)
+  b_cols <- grep("^(b\\.|(?!g\\.))", names(row), value = TRUE, perl = TRUE)
   bot_config <- as.list(row[, b_cols])
   bot_config$Type <- "bota"
   
@@ -595,7 +638,7 @@ extract_configs <- function(row) {
   names(bot_config) <- sub("^b\\.", "", names(bot_config))
   
   # Colonnes génétiques : celles qui commencent par g. ou Level / Name
-  g_cols <- grep("^g\\.|Level|Name", names(row), value = TRUE)
+  g_cols <- grep("^(g\\.|(?!b\\.))", names(row), value = TRUE, perl = TRUE)
   genet_config <- as.list(row[, g_cols])
   genet_config$Type <- "genet"
   

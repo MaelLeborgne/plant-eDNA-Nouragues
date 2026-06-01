@@ -49,7 +49,7 @@ plot_grid_interp(grid)
 grid_config <- list(
   Type = "genet",
   Rar = FALSE,
-  Marker = "GH",
+  Marker = "Sper01",
   Level = "Family",
   Name = "All",
   Metric = "Reads")
@@ -67,7 +67,7 @@ plot_grid(grid)
 grid_config <- list(
   Type = "genet",
   Rar = FALSE,
-  Marker = "GH",
+  Marker = "Sper01",
   Level = "Family",
   Name = "Aaaaa", # Unkown Name
   Metric = "Reads")
@@ -102,7 +102,7 @@ plot_grid(grid)
 config <- list(
   Type = "genet",
   Rar = FALSE,
-  Marker = "GH",
+  Marker = "Sper01",
   Level = "Species",
   Name = "Salvia textitlana",
   Metric = "Presence")
@@ -174,7 +174,7 @@ Wrap <- wrap_plots(all_plots, ncol = 3) +
 basic_config <- list(
   Type = "genet",
   Rar = FALSE,
-  Marker = "GH",
+  Marker = "Sper01",
   Level = "Family",
   Name = "Fabaceae")
 
@@ -299,7 +299,7 @@ p <- patch_turbo_species_ex(N_patch = 4)
 config <- list(
   Type = "genet",
   Rar = FALSE,
-  Marker = "GH",
+  Marker = "Sper01",
   Level = "Family"
 )
 
@@ -321,29 +321,38 @@ give_level_names(config)
 # Configurations
 bota_conf <- expand.grid(
   Type = "bota",
-  Level = "Species",
-  Name = "Goupia glabra",
+  Level = "Family",
+  Name = "Fabaceae",
+  # Level = "Species",
+  # Name = "Goupia glabra",
   Metric = c("Presence", "Count"),
   Year = "2012",
-  Radius = 20)
+  Radius = 20,
+  Norm = TRUE)
 
 nci_conf <- expand.grid(
   Type = "bota",
-  Level = "Species",
-  Name = "Goupia glabra",
-  Metric = c("NCI"),
+  Level = "Family",
+  Name = "Fabaceae",
+  # Level = "Species",
+  # Name = "Goupia glabra",
+  Metric = c("Hyp"),
   Year = "2012",
-  Radius = 20,
-  Alpha = 1.5,
-  Beta = 0.1)
+  Radius = 10000,
+  Beta = 1.79,
+  Norm = TRUE)
 
 genet_conf <- list(  
   Type = "genet",
+  # Level = "Family",
+  # Name = "Fabaceae",
   Level = "Species",
   Name = "Goupia glabra",
   Metric = "Reads",
   Rar = TRUE,
-  Marker = c("GH"))
+  Marker = c("Sper01"),
+  Norm = TRUE,
+  Filt = TRUE)
 
 config_tab <- bind_rows(list(bota_conf, nci_conf, genet_conf))
 
@@ -352,14 +361,14 @@ grid_list <- build_grids(config_tab)
 
 titles <- list(
   "Presence / Absence",
-  "Count (R=20)",
-  expression(bold(NCI~"("~alpha==1.5*","~beta==0.1~")")),
-  "GH Reads"
+  expression(bold(Count~"("~R==20~")")),
+  expression(bold(Hyp~"("~beta==1.79~")")),
+  "Sper01 Reads"
 )
 
 # Generate plots
 plot_list <- Map(function(grid, title){
-  plot_grid(grid, stems = TRUE) +
+  plot_grid(grid, stems = FALSE) +
     labs(title = title)
 }, grid_list, titles)
 
@@ -383,7 +392,7 @@ par(mfrow = c(1,3))
 bota <- import_bota(list("Year" = 2012))
 plot_Whittaker_bota(bota, "Family")
 
-plot_list <- lapply(c("GH","ITS"), function(m){
+plot_list <- lapply(c("Sper01","ITS2"), function(m){
   metabarlist <- import_genet(
   list(
     "Marker" = m,
@@ -403,7 +412,7 @@ plot_list <- lapply(c("GH","ITS"), function(m){
 
 # Multi marker curves + bota
 
-vec_list <- lapply(c("GH","ITS"), function(m){
+vec_list <- lapply(c("Sper01","ITS2"), function(m){
   metabarlist <- import_genet(
   list(
     "Marker" = m,
@@ -435,21 +444,21 @@ ggplot(multi_marker_rank, aes(x=Rank,y=Dominance,color = Marker)) +
 morpho <- import_plants_morpho() %>%
   pull(Species)
 
-# GH
+# Sper01
 config <- list(
   Type = "genet",
   Rar = FALSE,
-  Marker = "GH")
+  Marker = "Sper01")
 
 g_gh <- import_genet(config)$motus %>%
   dplyr::filter(!is.na(species)) %>%
   pull(species)
 
-# ITS
+# ITS2
 config <- list(
   Type = "genet",
   Rar = FALSE,
-  Marker = "ITS")
+  Marker = "ITS2")
 
 g_its <- import_genet(config)$motus %>%
   dplyr::filter(!is.na(species)) %>%
@@ -489,8 +498,8 @@ library(UpSetR)
 # créer une liste
 listes <- list(
 #  M = morpho,
-  GH = g_gh,
-  ITS = g_its,
+  Sper01 = g_gh,
+  ITS2 = g_its,
   S18 = g_18s,
   B = bota,
   N = nour
@@ -581,7 +590,7 @@ ggplot(compare, aes(x = genet, y = bota)) +
 # Configurations
 config_rad <- expand.grid(
   "g.Rar" = TRUE,
-  "g.Marker" = c("GH"),
+  "g.Marker" = c("Sper01"),
   "g.Metric" = "H1",
   "b.Radius" = 10,
   "b.Year" = c(2012),
