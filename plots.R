@@ -460,7 +460,7 @@ corr_tab_plot <- function(config_tab){
   # SET ORDER
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("T+","T-","MCC","Count","NCI")
+    levels = c("T+","T-","MCC","Count","EXP")
   )
   
   config_tab$Level <- factor(
@@ -530,7 +530,7 @@ corr_violin_plot <- function(config_tab){
   # ordre des colonnes (Metric)
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("NCI","Hyp","Count","T+","T-","MCC")
+    levels = c("EXP","HYP","Count","T+","T-","MCC")
   )
   
   # ordre des lignes (Level)
@@ -646,7 +646,7 @@ morpho_corr_matrix <- function(level, marker, model){
            g.Marker == marker,
            Metric_corr == model) %>%
     dplyr::select(Name, Correlation) %>%
-    rename(Species = Name, NCI = Correlation)
+    rename(Species = Name, EXP = Correlation)
   
   # Join
   df <- inner_join(model_corr, morpho, by = level) %>%
@@ -821,9 +821,14 @@ plot_grid <- function(grid, stems = FALSE) {
     coord_fixed() +
     theme_minimal() +
     labs(fill = NULL) +
-    scale_fill_viridis_c(option = "turbo",
-                         breaks = c(round(min(df$Metric, na.rm = TRUE),digits = 3),
-                                    round(max(df$Metric, na.rm = TRUE),digits = 3))) +
+    scale_fill_viridis_c(
+      option = "turbo",
+      breaks = c(min(df$Metric, na.rm = TRUE),
+                 max(df$Metric, na.rm = TRUE)),
+      labels = function(x) {
+        toupper(format(x, scientific = TRUE, digits = 1))
+      },
+    ) +
     theme(
       plot.title = element_text(
         hjust = 0.5,   # centre horizontalement
@@ -849,7 +854,7 @@ plot_grid <- function(grid, stems = FALSE) {
         shape = 21,   # cercle avec contour
         fill = NA,    # pas de remplissage
         colour = "white",
-        stroke = 1
+        stroke = 0.5
       ) +
       guides(size = "none") +
       geom_point(
@@ -1158,7 +1163,7 @@ patch_turbo_species_ex <- function(N_patch){
     dplyr::filter(
       Level %in% c("Species"),
       g.Marker %in% c("Sper01"),
-      Metric_corr %in% c("NCI")
+      Metric_corr %in% c("EXP")
     ) %>%
     dplyr::select(Name,Correlation) %>%
     arrange(desc(Correlation))
@@ -1384,7 +1389,7 @@ plot_Whittaker_genet <- function(df, Level){
   text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
 }
 
-morpho_corr_bar <- function(){
+morpho_corr_bar <- function(marker = "Sper01", level_filter = "Species") {
   
   # Import Morpho
   morpho <- import_plants_morpho() %>%
@@ -1392,11 +1397,12 @@ morpho_corr_bar <- function(){
   
   # Read Model
   model <- tab_rar %>%
-    filter(
-      Level == "Species",
-      g.Marker == "Sper01",
-      Metric_corr == "NCI"
-    ) %>%
+    dplyr::filter(
+      Level == level_filter,
+      g.Marker == marker,
+      Metric_corr == "HYP"
+    ) 
+  %>%
     dplyr::select(Name, Correlation) %>%
     rename(Species = Name, Model = Correlation)
   
@@ -1406,8 +1412,8 @@ morpho_corr_bar <- function(){
       -Species, -Genus, -Family, -order, -subclass2, -subclass1
     )
   
-  # Prepare data
-  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")["Model", ]
+  # Correlation
+  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")[, "Model"]
   
   corr_df <- data.frame(
     Variable = names(corr_vec),
@@ -1416,33 +1422,38 @@ morpho_corr_bar <- function(){
     dplyr::filter(Variable != "Model") %>%
     arrange(Correlation)
   
-  # Labels colored
+  # Colors
   colors <- list(
-    "forestgreen" = c("Chlorophyll_content",	"Thickness",	"Toughness",	"Leaf_Area",	"SLA",	"C",	"N",	"13C",	"Ca",	"P",	"K"),
-    "orange" = c("Trunk_bark_thickness",	"Sapwood_WSG"),
-    "brown" = c("WSG"),
-    "brown" = c("Diameter",	"SRL",	"Tissue_density",	"SRTA",	"branchiness")
+    forestgreen = c("Chlorophyll_content", "Thickness", "Toughness",
+                    "Leaf_Area", "SLA", "C", "N", "13C", "Ca", "P", "K"),
+    orange = c("Trunk_bark_thickness", "Sapwood_WSG"),
+    brown = c("WSG", "Diameter", "SRL", "Tissue_density", "SRTA", "branchiness")
   )
   
-  # Transformer la liste en vecteur nommé (paramètre -> couleur)
-  param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
+  param_colors <- setNames(
+    rep(names(colors), lengths(colors)),
+    unlist(colors)
+  )
   
-  # Générer les labels HTML automatiquement
   labels_source <- setNames(
     paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
     names(param_colors)
   )
   
   # Plot
-  ggplot(corr_df, aes(x = reorder(Variable, Correlation), y = Correlation, fill = Correlation)) +
+  ggplot(corr_df, aes(
+    x = reorder(Variable, Correlation),
+    y = Correlation,
+    fill = Correlation
+  )) +
     geom_col() +
     coord_flip() +
     scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
     geom_hline(yintercept = 0, linetype = "dashed") +
     theme_minimal(base_size = 14) +
     labs(
-      title = "Corrélation des traits morphologique avec le modèle",
-      subtitle = "au niveau specifique pour le marker Sper01",
+      title = "Corrélation des traits morphologiques avec le modèle",
+      subtitle = paste0("niveau spécifique pour le marker ", marker),
       x = "",
       y = "Pearson r",
       fill = "r"
@@ -1453,7 +1464,6 @@ morpho_corr_bar <- function(){
       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
       axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold")
     )
-  
 }
 
 # ===== < DEPRECATED > =====

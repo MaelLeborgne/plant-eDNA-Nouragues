@@ -570,7 +570,7 @@ make_cor_table_spatial <- function(config_tab){
 grid_correlation <- function(row){
   
   # Split Metric_corr cases
-  if(row$Metric_corr %in% c("Count","NCI","Hyp")){
+  if(row$Metric_corr %in% c("Count","EXP","HYP")){
     row$b.Metric <- row$Metric_corr  # Bota
     row$g.Metric <- "Reads"          # Génèt
   }
@@ -610,8 +610,8 @@ grid_correlation <- function(row){
   # Select Final metric
   grid_corr <- switch(row$Metric_corr,
                       "Count" = cor(B$Metric, G$Metric, method="spearman"),
-                      "NCI"   = cor(B$Metric, G$Metric, method="spearman"),
-                      "Hyp"   = cor(B$Metric, G$Metric, method="spearman"),
+                      "EXP"   = cor(B$Metric, G$Metric, method="spearman"),
+                      "HYP"   = cor(B$Metric, G$Metric, method="spearman"),
                       "OTU"   = cor(B$Metric, G$Metric, method="spearman"),
                       "T+"    = Tp, # True positive
                       "T-"    = Tn, # True negative

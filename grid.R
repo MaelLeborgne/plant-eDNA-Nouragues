@@ -252,7 +252,7 @@ bota_grid_read <- function(grid, filters = list()) {
                            "OTU"      = rowSums(mat > 0),
                            "Shannon"  = vegan::diversity(mat, index="shannon"),
                            "H1"       = exp(vegan::diversity(mat, index="shannon")),
-                           "Hyp"      = {
+                           "HYP"      = {
                              df <- G$df
                              
                              sapply(1:nrow(df), function(pixel){
@@ -266,11 +266,11 @@ bota_grid_read <- function(grid, filters = list()) {
                                
                                if (length(sel) == 0) return(0)
                                
-                               sum(((B$CircCorr[sel]/pi)^C$Beta) / dij[sel],
+                               sum(((B$CircCorr[sel]/pi)^C$Alpha) / dij[sel],
                                    na.rm = TRUE)
                              })
                            },
-                           "NCI" = {
+                           "EXP" = {
                              df <- G$df
                              
                              sapply(1:nrow(df), function(pixel){
@@ -284,7 +284,7 @@ bota_grid_read <- function(grid, filters = list()) {
                                
                                if (length(sel) == 0) return(0)
                                
-                               sum((B$CircCorr[sel]^C$Alpha) *
+                               sum(((B$CircCorr[sel]/pi)^C$Alpha) *
                                      exp(-C$Beta * dij[sel]),
                                    na.rm = TRUE)
                              })

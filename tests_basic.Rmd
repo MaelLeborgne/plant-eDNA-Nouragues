@@ -132,7 +132,7 @@ basic_config <- list(
 grid_filters <- list()
 
 # All metric
-all_metrics <- c("Count","NCI","Basal_Area_m2","OTU","Shannon","H1")
+all_metrics <- c("Count","EXP","Basal_Area_m2","OTU","Shannon","H1")
 
 # All plots
 all_plots <- list()
@@ -314,32 +314,45 @@ config <- list(
 give_level_names(config)
 ```
 
-## Botanical Model (Count,NCI,I/O)
+## Botanical Model (Count,EXP,I/O)
 
 ```{r}
 
 # Configurations
 bota_conf <- expand.grid(
   Type = "bota",
-  Level = "Family",
-  Name = "Fabaceae",
-  # Level = "Species",
-  # Name = "Goupia glabra",
+  # Level = "Family",
+  # Name = "Fabaceae",
+  Level = "Species",
+  Name = "Goupia glabra",
   Metric = c("Presence", "Count"),
   Year = "2012",
   Radius = 20,
   Norm = TRUE)
 
-nci_conf <- expand.grid(
+hyp_conf <- expand.grid(
   Type = "bota",
-  Level = "Family",
-  Name = "Fabaceae",
-  # Level = "Species",
-  # Name = "Goupia glabra",
-  Metric = c("Hyp"),
+  # Level = "Family",
+  # Name = "Fabaceae",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("HYP"),
   Year = "2012",
   Radius = 10000,
-  Beta = 1.79,
+  Alpha = 1.79,
+  Norm = TRUE)
+
+exp_conf <- expand.grid(
+  Type = "bota",
+  # Level = "Family",
+  # Name = "Fabaceae",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("EXP"),
+  Year = "2012",
+  Radius = 10000,
+  Alpha = 1.79,
+  Beta = 0.1,
   Norm = TRUE)
 
 genet_conf <- list(  
@@ -352,9 +365,9 @@ genet_conf <- list(
   Rar = TRUE,
   Marker = c("Sper01"),
   Norm = TRUE,
-  Filt = TRUE)
+  Filt = FALSE)
 
-config_tab <- bind_rows(list(bota_conf, nci_conf, genet_conf))
+config_tab <- bind_rows(list(bota_conf, hyp_conf, exp_conf, genet_conf))
 
 # Generate grids
 grid_list <- build_grids(config_tab)
@@ -362,18 +375,19 @@ grid_list <- build_grids(config_tab)
 titles <- list(
   "Presence / Absence",
   expression(bold(Count~"("~R==20~")")),
-  expression(bold(Hyp~"("~beta==1.79~")")),
+  expression(bold(HYP~"("~alpha==1.79~")")),
+  expression(bold(EXP~"("~alpha==1.79~","~beta==0.1~")")),
   "Sper01 Reads"
 )
 
 # Generate plots
 plot_list <- Map(function(grid, title){
-  plot_grid(grid, stems = FALSE) +
+  plot_grid(grid, stems = TRUE) +
     labs(title = title)
 }, grid_list, titles)
 
 # Wrap
-wrap_plots(plot_list, ncol = 4)
+wrap_plots(plot_list, ncol = 5)
 
 ```
 

@@ -85,7 +85,10 @@ plot_list <- lapply(names(list_by_level), function(lvl){
   
   ggVennDiagram(data) +
     scale_fill_gradient(low = "white", high = col) +
-    ggtitle(lvl)
+    ggtitle(lvl) +
+  theme(
+    plot.title = element_text(face = "bold")
+  )
 })
 
 plot_list
@@ -669,7 +672,7 @@ nci_conf <- expand.grid(
   Type = "bota",
   Level = "Species",
   Name = "Goupia glabra",
-  Metric = c("Hyp"),
+  Metric = c("HYP"),
   Year = "2012",
   Radius = 10000,
   Beta = 1.79,
@@ -693,7 +696,7 @@ grid_list <- build_grids(config_tab)
 titles <- list(
   "Presence / Absence",
   expression(bold(Count~"("~R==20~")")),
-  expression(bold(Hyp~"("~beta==1.79~")")),
+  expression(bold(HYP~"("~beta==1.79~")")),
   "Sper01 Reads"
 )
 
@@ -736,13 +739,13 @@ basic_config <- expand.grid(
 
 config_r10 <- merge(basic_config,
                    expand.grid(
-                   "Metric_corr" = c("Count","MCC"),
+                   "Metric_corr" = c("Count","MCC","EXP"),
                    "b.Radius" = 10,
                    stringsAsFactors = FALSE)
                    )
 
 config_hyp <- crossing(basic_config,
-  "Metric_corr" = c("Hyp"),
+  "Metric_corr" = c("HYP"),
   "b.Radius" = 10000,
   "Beta" = 1.79
 )
@@ -788,7 +791,7 @@ save( tab_rar,
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
@@ -799,7 +802,7 @@ tab_rar %>%
     filter(
       Level == "Family",
       g.Marker %in% c("Sper01","ITS2","18S"),
-      Metric_corr %in% c("Count","NCI","MCC")
+      Metric_corr %in% c("Count","EXP","MCC")
     ) %>%
   corr_tab_plot()
 
@@ -807,7 +810,7 @@ tab_rar %>%
     filter(
       Level == "Genus",
       g.Marker %in% c("Sper01","ITS2"),
-      Metric_corr %in% c("Count","NCI","MCC")
+      Metric_corr %in% c("Count","EXP","MCC")
     ) %>%
   corr_tab_plot()
 
@@ -815,7 +818,7 @@ tab_rar %>%
     filter(
       Level == "Species",
       g.Marker %in% c("Sper01","ITS2"),
-      Metric_corr %in% c("Count","NCI","MCC")
+      Metric_corr %in% c("Count","EXP","MCC")
     ) %>%
   corr_tab_plot()
 
@@ -839,7 +842,7 @@ tab_rar %>%
     filter(
       Level %in% c("Family","Genus","Species"),
       g.Marker %in% c("Sper01","ITS2"),
-      Metric_corr %in% c("Count","NCI","MCC")
+      Metric_corr %in% c("Count","EXP","MCC")
     ) %>%
   corr_violin_plot()
 ```
@@ -857,19 +860,39 @@ load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
+# CONFIGURATION
+# --------------------------------------------------
+
+config_tab <- expand.grid(
+  Marker = c("Sper01","ITS2"),
+  Level = c("Family","Genus","Species")
+)
+
+# --------------------------------------------------
+# PLOT
+# --------------------------------------------------
+
+config_tab <- config_tab %>%
+  mutate(plot = pmap(
+    pick(Marker, Level),
+    morpho_corr_bar
+  ))
+
+  
+# --------------------------------------------------
 # PLOT
 # --------------------------------------------------
 
 # -- Sper01 --
 mat_Sper01 <- morpho_corr_matrix(level = "Species", 
                    marker = "Sper01", 
-                   model = "NCI") +
+                   model = "EXP") +
   labs(title = "(Sper01)") 
 
 # # -- ITS2 --
 # mat_ITS2 <- morpho_corr_matrix(level = "Species", 
 #                    marker = "ITS2", 
-#                    model = "NCI") +
+#                    model = "EXP") +
 #   labs(title = "(ITS2)") 
 
 # Patchwork
