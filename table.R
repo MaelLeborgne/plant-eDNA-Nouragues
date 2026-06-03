@@ -109,6 +109,28 @@ get_tax_list <- function(Level, Marker){
   
 }
 
+filter_common_taxa <- function(tax_list_by_level){
+  list_filtered <- lapply(names(tax_list_by_level), function(level) {
+    
+    lvl_list <- list_by_level[[level]]
+    
+    bota <- lvl_list$Bota
+    
+    markers <- setdiff(names(lvl_list), "Bota")
+    
+    res <- lapply(markers, function(m) {
+      intersect(bota, lvl_list[[m]])
+    })
+    
+    names(res) <- markers
+    res
+  })
+  
+  names(list_filtered) <- names(list_by_level)
+  
+  return(list_filtered)
+}
+
 # ---- Names and filters ----
 
 give_level_names <- function(config){
@@ -166,9 +188,8 @@ rank_ab_tib_bota <- function(df, Level){
 rank_ab_tib_bota_BA <- function(df, Level){
   df %>% 
     group_by(.data[[Level]]) %>% 
-    summarize(Abundance = sum(pi*(CircCorr/(2*pi))^2), Dominance = n()/nrow(df)) %>%
-    arrange(desc(Abundance)) %>%
-    mutate(Rank = 1:length(Abundance))
+    summarize(Basal_Area = sum(pi*(CircCorr/(2*pi))^2)) %>%
+    arrange(desc(Basal_Area))
 }
 
 rank_ab_tib_genet <- function(df, Level){
@@ -551,20 +572,20 @@ give_common_taxa <- function(Rar, Level) {
 }
 
 # ---- Correlation ----
-
-make_cor_table_spatial <- function(config_tab){
+make_cor_table <- function(config_tab){
   
-  # Initialisation to zero
-  config_tab$Correlation <- 0 
+  # Initialisation
+  config_tab$Correlation <- vector("list", nrow(config_tab))
   
   # For each row in config tab
-  for(i in 1:nrow(config_tab)){
-    print(i)
-    # Compute grid correlation
-    config_tab$Correlation[[i]] <- grid_correlation(config_tab[i,])
-  }
+  config_tab_clean <- config_tab %>%
+    mutate(
+      Correlation = purrr::map(row_number(), ~ grid_correlation(config_tab[.x, ]))
+    ) %>% # Correlation estimates
+    tidyr::unnest_wider(Correlation) %>%  # r and p.value split
+    dplyr::filter(!is.na(Correlation)) # r != NA
   
-  return(config_tab)
+  return(config_tab_clean)
 }
 
 grid_correlation <- function(row){
@@ -574,7 +595,7 @@ grid_correlation <- function(row){
     row$b.Metric <- row$Metric_corr  # Bota
     row$g.Metric <- "Reads"          # Génèt
   }
-  else if(row$Metric_corr %in% c("T+","T-","F+","F-","MCC","Sen","Spe")){
+  else if(row$Metric_corr %in% c("T+","T-","F+","F-","I.O","Sen","Spe")){
     row$b.Metric <- "Presence"   # Bota
     row$g.Metric <- "Presence"   # Génèt
   }
@@ -598,7 +619,7 @@ grid_correlation <- function(row){
     mutate(tp = Metric.x == 1 & Metric.y == 1, # bota 1 genet 1
            tn = Metric.x == 0 & Metric.y == 0, # bota 0 genet 0
            fp = Metric.x == 0 & Metric.y == 1, # bota 0 genet 1
-           fn = Metric.x == 0 & Metric.y == 1  # bota 1 genet 0
+           fn = Metric.x == 1 & Metric.y == 0  # bota 1 genet 0
            )
   
   # Ratios
@@ -609,21 +630,59 @@ grid_correlation <- function(row){
   
   # Select Final metric
   grid_corr <- switch(row$Metric_corr,
-                      "Count" = cor(B$Metric, G$Metric, method="spearman"),
-                      "EXP"   = cor(B$Metric, G$Metric, method="spearman"),
-                      "HYP"   = cor(B$Metric, G$Metric, method="spearman"),
-                      "OTU"   = cor(B$Metric, G$Metric, method="spearman"),
-                      "T+"    = Tp, # True positive
-                      "T-"    = Tn, # True negative
-                      "F+"    = Fp, # True positive
-                      "F-"    = Fn, # True negative
-                      "Sen"   = Tp / (Tp + Fn), # Sensitivity
-                      "Spe"   = Tn / (Tn + Fp), # Specificity
-                      "MCC"   = mcc(BG$Metric.x, BG$Metric.y),
-                      stop(paste0("Unknown Metric :", configs$bota$Metric))
+                      "Count" = get_spearman(B$Metric, G$Metric),
+                      "HYP"   = get_spearman(B$Metric, G$Metric),
+                      "EXP"   = get_spearman(B$Metric, G$Metric),
+                      "OTU"   = get_spearman(B$Metric, G$Metric),
+                      
+                      "T+" = list(Correlation = Tp, p.value = NA),
+                      "T-" = list(Correlation = Tn, p.value = NA),
+                      "F+" = list(Correlation = Fp, p.value = NA),
+                      "F-" = list(Correlation = Fn, p.value = NA),
+                      
+                      "Sen" = list(Correlation = Tp / (Tp + Fn), p.value = NA),
+                      "Spe" = list(Correlation = Tn / (Tn + Fp), p.value = NA),
+                      
+                      "I.O" = {
+                        val <- mcc(BG$Metric.x, BG$Metric.y)
+                        list(Correlation = val, p.value = NA)
+                      },
+                      
+                      stop(paste0("Unknown Metric : ", row$Metric_corr))
   )
   
   return(grid_corr)
+}
+
+get_spearman <- function(x, y){
+  
+  # enlever NA
+  df <- na.omit(data.frame(x, y))
+  
+  # pas assez de données
+  if(nrow(df) < 3){
+    return(list(Correlation = NA, p.value = NA))
+  }
+  
+  # variance nulle
+  if(sd(df$x) == 0 || sd(df$y) == 0){
+    return(list(Correlation = NA, p.value = NA))
+  }
+  
+  # test sécurisé
+  ct <- tryCatch(
+    cor.test(df$x, df$y, method = "spearman", exact = FALSE),
+    error = function(e) NULL
+  )
+  
+  if(is.null(ct)){
+    return(list(Correlation = NA, p.value = NA))
+  }
+  
+  list(
+    Correlation = unname(ct$estimate),
+    p.value = ct$p.value
+  )
 }
 
 # ---- Other ----
@@ -670,20 +729,19 @@ mcc <- function(x, y) {
   (TP * TN - FP * FN) / denom
 }
 
-# ==== 3. DIVERSITY PATTERNS ====
-
-make_cor_table_diversity <- function(config_tab){
+aggregate_morpho <- function(morpho, level = "Species", fun = median) {
   
-  # Initialisation to zero
-  config_tab$Correlation <- 0 
-  
-  # For each row in config tab
-  for(i in 1:nrow(config_tab)){
-    print(i)
-    # Compute grid correlation
-    config_tab$Correlation[[i]] <- grid_correlation(config_tab[i,])
-  }
-  
-  return(config_tab)
+  morpho %>%
+    group_by(.data[[level]]) %>%
+    summarise(
+      across(
+        where(is.numeric),
+        ~ fun(.x, na.rm = TRUE)
+      ),
+      n = n(),
+      .groups = "drop"
+    )
 }
+
+# ==== 3. DIVERSITY PATTERNS ====
 

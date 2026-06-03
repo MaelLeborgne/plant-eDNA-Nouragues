@@ -66,6 +66,14 @@ config_tab$tax_list <- map2(
 list_by_level <- config_tab %>%
   split(.$Level) %>%
   map(~ setNames(.x$tax_list, .x$Marker))
+
+# --------------------------------------------------
+# SAVE
+# --------------------------------------------------
+save( list_by_level,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.list_by_level.RData")
+
+
 ```
 
 
@@ -344,17 +352,16 @@ Ab_18S <- rank_ab_tib_genet(metabarlist, "family") %>%
 # Plot log-log
 # --------------------------------------------------
 
-# Sper01
-p1 <- plot_log_log(Ab_bota, Ab_Sper01, "Sper01")
+# JOIN
+Ab_join <- full_join(Ab_bota, Ab_Sper01, by = "Family") %>%
+  full_join(Ab_ITS2, by = "Family")
+
+p <- plot_log_log(Ab_join)
 
 # ITS2
 p2 <- plot_log_log(Ab_bota, Ab_ITS2, "ITS2")
 
-# 18S
-p3 <- plot_log_log(Ab_bota, Ab_18S, "18S")
 
-# Patch
-p1 | p2
 
 # 🔍 Interprétation
 # pente = 1 → pas de changement de structure
@@ -654,28 +661,62 @@ plot_bias_growth(df_growth, ref_tab)
 
 # II. SPATIAL PATTERNS
 
-## 1. Models example
+## 1. Sepcies examples
+
+```{r}
+p <- patch_turbo_ex(marker = "Sper01", 
+                    level = "Species",
+                    metric = "EXP",
+                    selection = c(19,9,13,2),
+                    n=4)
+```
+
+
+## 2. Models examples
 
 ```{r}
 
-# Configurations
-bota_conf <- expand.grid(
+# --------------------------------------------------
+# CONFIGURATIONS
+# --------------------------------------------------
+
+i.o_conf <- expand.grid(
   Type = "bota",
   Level = "Species",
   Name = "Goupia glabra",
-  Metric = c("Presence", "Count"),
+  Metric = c("Presence"),
+  Year = "2012",
+  Radius = 20,
+  Norm = FALSE)
+
+count_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("Count"),
   Year = "2012",
   Radius = 20,
   Norm = TRUE)
 
-nci_conf <- expand.grid(
+hyp_conf <- expand.grid(
   Type = "bota",
   Level = "Species",
   Name = "Goupia glabra",
   Metric = c("HYP"),
   Year = "2012",
   Radius = 10000,
-  Beta = 1.79,
+  Alpha = 1.79,
+  Norm = TRUE)
+
+exp_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("EXP"),
+  Year = "2012",
+  Radius = 10000,
+  Alpha = 1.79,
+  Beta = 0.1,
   Norm = TRUE)
 
 genet_conf <- list(  
@@ -686,36 +727,46 @@ genet_conf <- list(
   Rar = TRUE,
   Marker = c("Sper01"),
   Norm = TRUE,
-  Filt = TRUE)
+  Filt = FALSE)
 
-config_tab <- bind_rows(list(bota_conf, nci_conf, genet_conf))
+config_tab <- bind_rows(list(i.o_conf, count_conf, hyp_conf, exp_conf, genet_conf))
 
-# Generate grids
+# --------------------------------------------------
+# GRID
+# --------------------------------------------------
 grid_list <- build_grids(config_tab)
 
 titles <- list(
-  "Presence / Absence",
+  "1 / 0",
   expression(bold(Count~"("~R==20~")")),
-  expression(bold(HYP~"("~beta==1.79~")")),
+  expression(bold(HYP~"("~alpha==1.79~")")),
+  expression(bold(EXP~"("~alpha==1.79~","~beta==0.1~")")),
   "Sper01 Reads"
 )
 
-# Generate plots
+# --------------------------------------------------
+# PLOT
+# --------------------------------------------------
 plot_list <- Map(function(grid, title){
   plot_grid(grid, stems = TRUE) +
     labs(title = title)
 }, grid_list, titles)
 
 # Wrap
-wrap_plots(plot_list, ncol = 4)
+wrap_plots(plot_list, ncol = 5)
 
 ```
 
-## 2. Correlation tab
+## 3. Correlation tab
 
 ### A. Create (OK)
 
 ```{r}
+# --------------------------------------------------
+# LOAD
+# --------------------------------------------------
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.list_by_level.RData",
+  envir = .GlobalEnv)
 
 # --------------------------------------------------
 # CONFIGURATION
@@ -733,43 +784,53 @@ basic_config <- expand.grid(
   "g.Marker" = c("Sper01","ITS2","18S"),
   "b.Year" = c(2012),
   "Level" = levels,
-  "Norm" = TRUE,
   stringsAsFactors = FALSE
 )
 
-config_r10 <- merge(basic_config,
-                   expand.grid(
-                   "Metric_corr" = c("Count","MCC","EXP"),
+config_i.o <- crossing(basic_config,
+                   "Metric_corr" = c("I.O"),
                    "b.Radius" = 10,
-                   stringsAsFactors = FALSE)
+                   "Norm" = FALSE
+                   )
+
+config_count <- crossing(basic_config,
+                   "Metric_corr" = c("Count"),
+                   "b.Radius" = 10,
+                   "Norm" = TRUE
+                   )
+
+config_exp <- crossing(basic_config,
+                   "Metric_corr" = "EXP",
+                   "b.Radius" = 10000,
+                   "Alpha" = 1.79,
+                   "Beta" = 0.1,
+                   "Norm" = TRUE
                    )
 
 config_hyp <- crossing(basic_config,
-  "Metric_corr" = c("HYP"),
+  "Metric_corr" = "HYP",
   "b.Radius" = 10000,
-  "Beta" = 1.79
+  "Alpha" = 1.79,
+  "Norm" = TRUE
 )
 
-config_tab <- bind_rows(config_r10,config_hyp)
+config_tab <- bind_rows(config_i.o, config_count, config_exp, config_hyp)
 
 # Give common Names for each level
-level_list <- setNames(
-  lapply(levels, function(l) give_common_taxa(Rar = rar, Level = l)),
-  levels
-)
+level_list <- filter_common_taxa(list_by_level)
 
-# Expand with Names by level
+# Expand with Names by level/marker
 config_tab <- config_tab %>%
   rowwise() %>%
-  mutate(Name = list(level_list[[Level]])) %>%  # Créer une liste de name
-  unnest(Name)                        # transformer la liste en lignes
+  mutate(Name = list(level_list[[Level]][[g.Marker]])) %>% # ajouter une colonne de listes
+  unnest(Name) # transformer les listes en lignes
 
 # config_tab %>% view()
 
 # --------------------------------------------------
 # RUN CALCULS
 # --------------------------------------------------
-tab_rar <- make_cor_table_spatial(config_tab)
+tab_rar <- make_cor_table(config_tab)
 
 # --------------------------------------------------
 # VIEW
@@ -802,7 +863,7 @@ tab_rar %>%
     filter(
       Level == "Family",
       g.Marker %in% c("Sper01","ITS2","18S"),
-      Metric_corr %in% c("Count","EXP","MCC")
+      Metric_corr %in% c("Count","EXP","I.O")
     ) %>%
   corr_tab_plot()
 
@@ -810,7 +871,7 @@ tab_rar %>%
     filter(
       Level == "Genus",
       g.Marker %in% c("Sper01","ITS2"),
-      Metric_corr %in% c("Count","EXP","MCC")
+      Metric_corr %in% c("Count","EXP","I.O")
     ) %>%
   corr_tab_plot()
 
@@ -818,7 +879,7 @@ tab_rar %>%
     filter(
       Level == "Species",
       g.Marker %in% c("Sper01","ITS2"),
-      Metric_corr %in% c("Count","EXP","MCC")
+      Metric_corr %in% c("Count","EXP","I.O")
     ) %>%
   corr_tab_plot()
 
@@ -832,7 +893,7 @@ tab_rar %>%
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
@@ -842,15 +903,15 @@ tab_rar %>%
     filter(
       Level %in% c("Family","Genus","Species"),
       g.Marker %in% c("Sper01","ITS2"),
-      Metric_corr %in% c("Count","EXP","MCC")
+      Metric_corr %in% c("I.O","Count","HYP","EXP")
     ) %>%
   corr_violin_plot()
 ```
 
 
-## 3. Correlation Morphological traits
+## 4. Correlation Morphological traits
 
-### A. Species Level (+ 3 models + family level)
+### A. Matrix Species Level (OK)
 
 ```{r}
 # --------------------------------------------------
@@ -895,10 +956,45 @@ mat_Sper01 <- morpho_corr_matrix(level = "Species",
 #                    model = "EXP") +
 #   labs(title = "(ITS2)") 
 
-# Patchwork
 mat_Sper01
 
 ```
+
+### B. Barplot 3 levels
+
+
+```{r}
+# --------------------------------------------------
+# LOAD
+# --------------------------------------------------
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
+  envir = .GlobalEnv)
+
+# --------------------------------------------------
+# PLOT
+# --------------------------------------------------
+morpho_corr_bar_strip(Marker = "Sper01", Metric = "EXP")
+```
+
+
+#### View variability
+```{r}
+
+p1 <- morpho_corr_bar_strip(Marker = "Sper01", Metric = "EXP") +
+  labs(title = "Sper01 / EXP")
+p2 <- morpho_corr_bar_strip(Marker = "Sper01", Metric = "I.O") +
+  labs(title = "Sper01 / I.O")
+
+p3 <- morpho_corr_bar_strip(Marker = "ITS2", Metric = "EXP") +
+  labs(title = "ITS2 / EXP")
+p4 <- morpho_corr_bar_strip(Marker = "ITS2", Metric = "I.O") +
+  labs(title = "ITS2 / I.O")
+
+(p1+p2) / (p3+p4)
+
+
+```
+
 
 
 # III. DIVERSITY PATTERNS
@@ -927,7 +1023,7 @@ config_rad <- expand.grid(
 # --------------------------------------------------
 # RUN CALCULS
 # --------------------------------------------------
-tab_rad_H1 <- make_cor_table_diversity(config_rad)
+tab_rad_H1 <- make_cor_table(config_rad)
 
 # --------------------------------------------------
 # VIEW
@@ -953,18 +1049,9 @@ load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_H1.RData",
 # --------------------------------------------------
 # PLOT
 # --------------------------------------------------
+p <- plot_correlogramme(tab_rad_H1)
+p
 
-# -- Sper01 --
-p1 <- plot_correlogramme(tab_rad_H1,"Sper01")
-
-# -- ITS2 --
-p2 <- plot_correlogramme(tab_rad_H1,"ITS2")
-
-# -- 18S --
-p3 <- plot_correlogramme(tab_rad_H1,"18S")
-
-# Patchwork
-(p1 | p2 | p3)
 ```
 
 ## 2. Random Forest

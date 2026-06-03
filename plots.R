@@ -19,41 +19,60 @@ library(randomForest)
 # ==== 1. TAXONOMY ====
 
 # -- function : take two tables and make plot log-log --
-plot_log_log <- function(Ab1, Ab2, marker){
-  # JOIN
-  Ab_join <- inner_join(Ab1, Ab2, by = "Family")
+plot_log_log <- function(df_H2){
 
+  # Title labels
+  lab_title <- list(
+    "Sper01" = "Sper01 ~ Bota",
+    "ITS2" = "ITS2 ~ Bota"
+  )
+  
+  # Factorize
+  df_H2$Marker <- factor(
+    df_H2$Marker,
+    levels = c("Sper01","ITS2")
+  )
+  
+  # compute n per marker
+  n_df <- df_H2 %>%
+    dplyr::group_by(Marker) %>%
+    dplyr::summarise(n = n(), .groups = "drop")
+  
   # PLOT
-  ggplot(Ab_join, aes(x = log(Abundance+1), y = log(Reads+1))) +
-    theme_light() +
+  ggplot(df_H2, aes(x = log(Basal_Area+1), y = log(Reads+1))) +
+    # facet_wrap
+    facet_wrap(~Marker, scales = "fixed", strip.position = "top", labeller = labeller(Marker = lab_title))+
     geom_point(aes(color=tree)) +
     geom_smooth(method = "lm", color = "blue") +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
     coord_fixed() +
     xlim(0, 15) +
     ylim(0, 15) +
-    stat_cor(method = "kendall",
-             cor.coef.name = "tau",
-             label.x = 1, label.y = 14) +
-    annotate(
-      "text",
-      x = 1,
-      y = 13,
-      label = paste0("n = ", nrow(Ab_join)),
+    # Stat
+    stat_cor(
+      method = "kendall",
+      cor.coef.name = "tau",
+      label.x = 1,
+      label.y = 14
+    ) +
+    # n per facet
+    geom_text(
+      data = n_df,
+      aes(x = 1, y = 13, label = paste0("n = ", n)),
+      inherit.aes = FALSE,
       hjust = 0,
       size = 4
     ) +
-    labs(
-      title = paste0(marker, " ~ Bota"),
-      color = "trees (%)") +
+    labs(color = "trees (%)") +
     xlab("log(Basal Area + 1)")+
     ylab("log(Reads + 1)")+
-    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16)) +
     scale_color_gradient(
       low = "black",
       high = "blue",
       limits = c(0, 100)
-    )
+    ) +
+    theme_bw() +
+    theme(strip.text.x = element_text(face = "bold",size=14, colour = "black"))
 }
 
 ab_rel_tab <- function(df_ab_rel){
@@ -81,7 +100,9 @@ ab_rel_tab <- function(df_ab_rel){
   df_ab_rel$Clade <- factor(df_ab_rel$Clade, levels = rev(order_clade))
   
   # Clean data
-  tab_clean <- droplevels(na.omit(df_ab_rel))
+  tab_clean <- df_ab_rel %>%
+    dplyr::filter(!is.na(Correlation)) %>%
+    droplevels()
   
   # Labels conditionels Y
   labels_y <- tab_clean %>%
@@ -426,33 +447,40 @@ plot_bias_growth <- function(df_bias, ref_tab){
 
 # ===== 2. SPATIAL PATTERNS =====
 
-plot_correlogramme <- function(tab_rad, Marker){
+plot_correlogramme <- function(tab_rad){
   
   # As Factors
   tab_rad$b.Radius <- as.factor(tab_rad$b.Radius)
-  tab_rad$g.Marker <- as.factor(tab_rad$g.Marker)
+  tab_rad$g.Marker <- factor(
+    tab_rad$g.Marker, 
+    levels = c("Sper01","ITS2","18S"))
   tab_rad$Level <- as.factor(tab_rad$Level)
   
   # Median and quartiles
   tab <- tab_rad %>%
-    filter(g.Marker == Marker)
+    filter(g.Marker %in% c("Sper01","ITS2")) %>%
+    mutate(
+      p.value = ifelse(p.value <= 0.05, "p<=0.05", "p>0.5")
+    )
   
   # PLOT
   ggplot(tab, aes(x = b.Radius, y = Correlation, color = Level, group=Level)) +
+    facet_wrap(~g.Marker, scales = "fixed", strip.position = "top")+
     geom_line() +
-    geom_point() +
-    labs(x = "Radius (m)", y = "Correlation") +
+    geom_point(aes(shape = p.value), size = 2.5) +
+    scale_shape_manual(
+      values = c(
+        `p<=0.05` = 16,   # rond plein
+        `p>0.5` = 1 # rond creux
+      )
+    )+
+    labs(x = "Radius (m)", y = "Spearmans' r") +
     theme_bw() +
     geom_hline(
       yintercept = 0,
       linetype = "dashed"
-    ) + 
-    theme(plot.title = element_text(
-      hjust = 0.5,
-      size = 14,
-      face = "bold"
-    )) +
-    labs(title = Marker)
+    ) +
+    theme(strip.text.x = element_text(face = "bold",size=14))
 }
 
 corr_tab_plot <- function(config_tab){
@@ -460,7 +488,7 @@ corr_tab_plot <- function(config_tab){
   # SET ORDER
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("T+","T-","MCC","Count","EXP")
+    levels = c("T+","T-","I.O","Count","EXP")
   )
   
   config_tab$Level <- factor(
@@ -479,7 +507,9 @@ corr_tab_plot <- function(config_tab){
   )
   
   # clean data
-  config_tab_clean <- droplevels(na.omit(config_tab))
+  config_tab_clean <- df_ab_rel %>%
+    filter(!is.na(Correlation)) %>%
+    droplevels()
   
   # PLOT
   ggplot(config_tab_clean,
@@ -527,20 +557,28 @@ corr_violin_plot <- function(config_tab){
   config_tab <- config_tab %>%
     dplyr::select(g.Marker, Level, Metric_corr, Name, Correlation)
   
-  # ordre des colonnes (Metric)
+  # Metric
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("EXP","HYP","Count","T+","T-","MCC")
+    levels = c("EXP","HYP","Count","T+","T-","I.O")
   )
   
-  # ordre des lignes (Level)
+  # Level
   config_tab$Level <- factor(
     config_tab$Level,
     levels = c("Family","Genus","Species")
   )
   
+  # Marker
+  config_tab$g.Marker <- factor(
+    config_tab$g.Marker,
+    levels = c("Sper01","ITS2")
+  )
+  
   # clean data
-  config_tab_clean <- droplevels(na.omit(config_tab))
+  config_tab_clean <- config_tab %>%
+    filter(!is.na(Correlation)) %>%
+    droplevels()
   
   # Test stat global
   res_aov3 <- aov(Correlation ~ Level * Metric_corr * g.Marker, 
@@ -563,6 +601,14 @@ corr_violin_plot <- function(config_tab){
         ),
       by = c("Metric_corr", "g.Marker", "Level")
     )
+  
+  # Nombre de points
+  n_df <- config_tab_clean %>%
+    group_by(Metric_corr, g.Marker, Level) %>%
+    summarise(n = n(), .groups = "drop")
+  
+  n_df <- n_df %>%
+    mutate(pos = 0.85)  # légèrement à droite de ta limite max (1)
   
   # PLOT
   ggplot(config_tab_clean,
@@ -601,6 +647,14 @@ corr_violin_plot <- function(config_tab){
               inherit.aes = FALSE,
               size = 5,
               col = "red") +
+    geom_text(
+      data = n_df,
+      aes(x = pos,
+          y = Metric_corr,
+          label = paste0("n=", n)),
+      inherit.aes = FALSE,
+      size = 4
+    ) +
     geom_vline(xintercept = 0, linetype = "dashed", color = "black")+
     geom_vline(xintercept = 1, linetype = "dashed", color = "black")+
     
@@ -610,7 +664,7 @@ corr_violin_plot <- function(config_tab){
       panel.grid = element_blank(),
       #axis.title = element_blank(),
       axis.title.y = element_blank(),
-      axis.title.x.bottom = element_text(size=12),
+      axis.title.x.bottom = element_text(size=13),
       axis.line = element_line(color = "gray"),  # Lignes des axes en noir
       axis.text = element_text(color = "black"),  # Texte des axes en noir
       axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
@@ -622,7 +676,9 @@ corr_violin_plot <- function(config_tab){
       strip.text.y.left = element_text(angle = 0, face = "bold",size=14),
       
       # axes
-      axis.text.x.top = element_text(face = "bold")
+      axis.text.x.top = element_text(face = "bold"),
+      axis.text.x.bottom = element_text(size = 13),
+      axis.text.y = element_text(size = 14)
     ) +
     
     labs(
@@ -630,7 +686,7 @@ corr_violin_plot <- function(config_tab){
     ) + 
     scale_x_continuous(
       breaks = seq(0, 1, 0.2),
-      limits = c(-0.15, 1)
+      limits = c(-0.15, 1.1)  # ← important
     )
 }
 
@@ -735,6 +791,200 @@ morpho_corr_matrix <- function(level, marker, model){
     )
 }
 
+morpho_corr_bar <- function(marker = "Sper01", level = "Species", metric = "HYP") {
+  
+  # Import Morpho
+  morpho <- import_plants_morpho() %>%
+    mutate(Species = gsub("_", " ", Species))
+  
+  # Aggregate traits by level
+  morpho_agg <- aggregate_morpho(morpho, level, median)
+  
+  # Read Model
+  model <- tab_rar %>%
+    dplyr::filter(
+      Level == level,
+      g.Marker == marker,
+      Metric_corr == metric
+    ) %>%
+    dplyr::select(Name, Correlation) %>%
+    rename(!!level := Name, Model = Correlation)
+  
+  # Inner Join
+  model_morpho_df <- inner_join(model, morpho_agg, by = level) %>%
+    dplyr::select(-!!level, -n)
+  
+  # Correlation
+  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")[, "Model"]
+  
+  corr_df <- data.frame(
+    Variable = names(corr_vec),
+    Correlation = corr_vec
+  ) %>%
+    dplyr::filter(Variable != "Model") %>%
+    arrange(Correlation)
+  
+  # Colors
+  colors <- list(
+    forestgreen = c("Chlorophyll_content", "Thickness", "Toughness",
+                    "Leaf_Area", "SLA", "C", "N", "13C", "Ca", "P", "K"),
+    orange = c("Trunk_bark_thickness", "Sapwood_WSG"),
+    brown = c("WSG", "Diameter", "SRL", "Tissue_density", "SRTA", "branchiness")
+  )
+  
+  param_colors <- setNames(
+    rep(names(colors), lengths(colors)),
+    unlist(colors)
+  )
+  
+  labels_source <- setNames(
+    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
+    names(param_colors)
+  )
+  
+  # Plot
+  ggplot(corr_df, aes(
+    x = reorder(Variable, Correlation),
+    y = Correlation,
+    fill = Correlation
+  )) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    theme_minimal(base_size = 14) +
+    labs(
+      title = paste0(level),
+      x = "",
+      y = "Pearson r",
+      fill = "r"
+    ) +
+    scale_x_discrete(labels = labels_source) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
+      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold")
+    )
+}
+
+morpho_corr_df <- function(marker = "Sper01", level = "Species", metric = "HYP") {
+  
+  morpho <- import_plants_morpho() %>%
+    mutate(Species = gsub("_", " ", Species))
+  
+  morpho_agg <- aggregate_morpho(morpho, level, median)
+  
+  model <- tab_rar %>%
+    dplyr::filter(
+      Level == level,
+      g.Marker == marker,
+      Metric_corr == metric
+    ) %>%
+    dplyr::select(Name, Correlation) %>%
+    rename(!!level := Name, Model = Correlation)
+  
+  model_morpho_df <- inner_join(model, morpho_agg, by = level) %>%
+    dplyr::select(-!!level, -n)
+  
+  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")[, "Model"]
+  
+  data.frame(
+    Variable = names(corr_vec),
+    Correlation = corr_vec,
+    Level = level
+  ) %>%
+    dplyr::filter(Variable != "Model")
+}
+
+morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP"){
+  
+  levels <- c("Family", "Genus", "Species")
+  
+  corr_all <- map_dfr(levels, ~ morpho_corr_df(level = .x, marker = Marker, metric = Metric))
+  
+  # Colors
+  colors <- list(
+    forestgreen = c("Chlorophyll_content", "Thickness", "Toughness",
+                    "Leaf_Area", "SLA", "C", "N", "13C", "Ca", "P", "K"),
+    orange = c("Trunk_bark_thickness", "Sapwood_WSG"),
+    brown = c("WSG", "Diameter", "SRL", "Tissue_density", "SRTA", "branchiness")
+  )
+  
+  param_colors <- setNames(
+    rep(names(colors), lengths(colors)),
+    unlist(colors)
+  )
+  
+  labels_source <- setNames(
+    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
+    names(param_colors)
+  )
+  
+  # Reorder
+  family_order <- corr_all %>%
+    filter(Level == "Family") %>%
+    arrange(Correlation) %>%
+    pull(Variable)
+  
+  corr_all <- corr_all %>%
+    mutate(
+      Variable = factor(Variable, levels = family_order)
+    )
+  
+  # Labels
+  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData")
+  tab_rar <- tab_rar %>%
+    dplyr::select(g.Marker, Level, Metric_corr, Name, Correlation)
+  
+  n_df <- tab_rar %>%
+    group_by(Metric_corr, g.Marker, Level) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    dplyr::filter(g.Marker == Marker, Metric_corr == Metric) %>%
+    mutate(label = paste0(Level, " (n=", n, ")")) %>%
+    dplyr::select(Level, label) %>%
+    deframe()
+  
+  # Plot
+  ggplot(corr_all, aes(
+    x = Correlation,
+    y = Variable,
+    fill = Correlation
+  )) +
+    geom_col() +
+    scale_y_discrete(labels = labels_source) +
+    # facet_wrap
+    facet_wrap(~Level, scales = "fixed", strip.position = "top", labeller = labeller(Level = n_df))+
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    theme(
+      panel.background = element_rect(fill = "white", color = NA),
+      panel.border = element_rect(color = "grey70", fill = NA, linewidth = 0.6),
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.minor = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.minor.x = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.minor.y = element_line(color = "grey90", linewidth = 0.3),
+
+      axis.title.y = element_blank(),
+      axis.title.x.bottom = element_text(size=13),
+      axis.line = element_line(color = "gray"),  # Lignes des axes en noir
+      axis.text = element_text(color = "black"),  # Texte des axes en noir
+      axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
+      
+      # strips
+      strip.background = element_blank(),
+      strip.placement = "outside",
+      strip.text = element_text(face = "bold", size = 14),
+      
+      # axes
+      axis.text.x.bottom = element_text(size = 11),
+      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold",size = 11)
+    ) +
+    labs(
+      x = "Pearson r"
+    )
+}
 
 # ==== 3. DIVERSITY PATTERNS ====
 
@@ -1072,7 +1322,7 @@ patch_turbo_family <- function(factor = 1){
   patchwork::wrap_plots(plots, ncol = 4)
 }
 
-mono_turbo_species <- function(grid, corr, factor = 2) {
+mono_turbo_species <- function(grid, factor = 1) {
   
   fine <- interpolate_grid_2D(grid, factor)
   
@@ -1100,7 +1350,7 @@ mono_turbo_species <- function(grid, corr, factor = 2) {
       axis.ticks = element_blank(),
       panel.grid = element_blank(),
       legend.position = "bottom",  # légende sous le plot
-      legend.margin = margin(t = -10),
+      legend.margin = ggplot2::margin(t=-10),
       plot.title = ggplot2::element_text(
         hjust = 0.5,   # centré
         size = 12,
@@ -1111,7 +1361,7 @@ mono_turbo_species <- function(grid, corr, factor = 2) {
         size = 11,
         face = "bold"
       ),
-      plot.margin = margin(0, 20, 0, 20)
+      plot.margin = ggplot2::margin(0, 20, 0, 20)
     ) +
     
     # légende horizontale sans titre
@@ -1149,32 +1399,27 @@ mono_turbo_species <- function(grid, corr, factor = 2) {
     ) +
     # ajouter nom centré en bas
     labs(
-      title = grid$config$Name,
-      caption = paste0("Pearson's r = ", corr)
+      title = grid$config$Name
     )
 }
 
 
-patch_turbo_species_ex <- function(N_patch){
-  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_corr_tot.RData",
+patch_turbo_ex <- function(marker, level, metric, selection, n){
+  
+  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData",
        envir = .GlobalEnv)
   
-  common_sp <- df_corr_tot %>%
-    dplyr::filter(
-      Level %in% c("Species"),
-      g.Marker %in% c("Sper01"),
-      Metric_corr %in% c("EXP")
-    ) %>%
-    dplyr::select(Name,Correlation) %>%
-    arrange(desc(Correlation))
+  # Level and Marker selection
+  common_tax <- tab_rar %>%
+    dplyr::filter(Level == level, g.Marker == marker, Metric_corr == metric) %>%
+    arrange(Correlation) %>%
+    pull(Name)
   
-  # Select species
-  common_sp <- common_sp[c(1,7,12,13),]
+  # Apply indices selection
+  common_tax <- common_tax[selection]
   
-  common_sp$plots <- lapply(seq_along(common_sp$Name),function(i){
+  plots <- lapply(common_tax,function(sp){
     
-    sp <- common_sp$Name[[i]]
-    corr <- common_sp$Correlation[[i]] %>% round(digits = 3)
     print(sp)
     
     # Import genet grid
@@ -1198,16 +1443,16 @@ patch_turbo_species_ex <- function(N_patch){
       mutate(Year = factor(2022, levels = c(2012, 2022)))
     
     # générer la heatmap
-    p <- mono_turbo_species(genet_grid, corr)
+    p <- mono_turbo_species(genet_grid)
     
     # Année 1
     p <- p +
       geom_point(
         data = bota_focus1,
-        aes(x = Xfield, y = Yfield, size = CircCorr/2),
+        aes(x = Xfield, y = Yfield, size = CircCorr/4),
         color = "red",
         shape = 21,
-        stroke = 0.3,
+        stroke = 0.5,
         fill = NA
       )
     
@@ -1218,7 +1463,7 @@ patch_turbo_species_ex <- function(N_patch){
         aes(x = Xfield, y = Yfield, size = CircCorr),
         color = "orange",
         shape = 21,
-        stroke = 0.3,
+        stroke = 0.5,
         fill = NA
       )+
       guides(size = "none")
@@ -1239,7 +1484,7 @@ patch_turbo_species_ex <- function(N_patch){
   })
   
   # assembler les plots en patchwork
-  wrap_plots(common_sp$plots, ncol = N_patch)
+  wrap_plots(plots, ncol = n)
   # plot_annotation(
   #   title = Year,
   #   theme = theme(
@@ -1389,82 +1634,7 @@ plot_Whittaker_genet <- function(df, Level){
   text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
 }
 
-morpho_corr_bar <- function(marker = "Sper01", level_filter = "Species") {
-  
-  # Import Morpho
-  morpho <- import_plants_morpho() %>%
-    mutate(Species = gsub("_", " ", Species))
-  
-  # Read Model
-  model <- tab_rar %>%
-    dplyr::filter(
-      Level == level_filter,
-      g.Marker == marker,
-      Metric_corr == "HYP"
-    ) 
-  %>%
-    dplyr::select(Name, Correlation) %>%
-    rename(Species = Name, Model = Correlation)
-  
-  # Inner Join
-  model_morpho_df <- inner_join(model, morpho, by = "Species") %>%
-    dplyr::select(
-      -Species, -Genus, -Family, -order, -subclass2, -subclass1
-    )
-  
-  # Correlation
-  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")[, "Model"]
-  
-  corr_df <- data.frame(
-    Variable = names(corr_vec),
-    Correlation = corr_vec
-  ) %>%
-    dplyr::filter(Variable != "Model") %>%
-    arrange(Correlation)
-  
-  # Colors
-  colors <- list(
-    forestgreen = c("Chlorophyll_content", "Thickness", "Toughness",
-                    "Leaf_Area", "SLA", "C", "N", "13C", "Ca", "P", "K"),
-    orange = c("Trunk_bark_thickness", "Sapwood_WSG"),
-    brown = c("WSG", "Diameter", "SRL", "Tissue_density", "SRTA", "branchiness")
-  )
-  
-  param_colors <- setNames(
-    rep(names(colors), lengths(colors)),
-    unlist(colors)
-  )
-  
-  labels_source <- setNames(
-    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
-    names(param_colors)
-  )
-  
-  # Plot
-  ggplot(corr_df, aes(
-    x = reorder(Variable, Correlation),
-    y = Correlation,
-    fill = Correlation
-  )) +
-    geom_col() +
-    coord_flip() +
-    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    theme_minimal(base_size = 14) +
-    labs(
-      title = "Corrélation des traits morphologiques avec le modèle",
-      subtitle = paste0("niveau spécifique pour le marker ", marker),
-      x = "",
-      y = "Pearson r",
-      fill = "r"
-    ) +
-    scale_x_discrete(labels = labels_source) +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),
-      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
-      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold")
-    )
-}
+
 
 # ===== < DEPRECATED > =====
 
