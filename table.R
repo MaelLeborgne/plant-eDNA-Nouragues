@@ -488,6 +488,154 @@ bias_assign_new <- function(){
     rename(inventory = Source)
 }
 
+genet_family_OTU_nb <- function(genet){
+  # Replace NA by Indet. (same as bota survey)
+  for (l in c("family","genus","species")) {
+    genet$motus[[l]][is.na(genet$motus[[l]])] <- "Indet."
+  }
+  
+  # Select OTU
+  otu_list <- select_tax(genet$motus, "family", "All")
+  
+  # # Apply otu filters
+  # otu_list <- rlang::exec(apply_filters, otu_list, !!!filters) 
+  
+  # get otu_id
+  otu_list <- otu_list %>% filter(!is.na(id)) %>% pull(id)
+  
+  # Replace : and - by . # (18S anomaly)
+  otu_list <- gsub(":", ".", otu_list)
+  otu_list <- gsub("-", ".", otu_list)
+  
+  # Select Reads from OTU_id
+  reads_filtered <- genet$reads[, colnames(genet$reads) %in% otu_list, drop = FALSE]
+  
+  # Init
+  reads_tax <- reads_filtered
+  
+  # Créer le vecteur d'espèces aligné avec les lignes
+  tax_names <- genet$motus[["family"]][
+    match(colnames(reads_filtered), genet$motus$id)
+  ]
+  
+  # OTU by family
+  OTU_nb <- table(tax_names) %>%
+    as.data.frame() %>%
+    dplyr::rename(Family = tax_names, n_otu = Freq)
+  
+  return(OTU_nb)
+}
+
+expand_otu <- function(OTU_nb){
+  
+  OTU_nb %>%
+    tidyr::uncount(weights = n_otu, .id = "OTU_id") %>%
+    mutate(OTU = paste0(Family, "_", OTU_id)) %>%
+    select(OTU, Family)
+}
+
+aggregate_null <- function(sim_df){
+  
+  gf_cols <- setdiff(names(sim_df), c("OTU","Family"))
+  
+  sim_df %>%
+    group_by(Family) %>%
+    summarise(across(all_of(gf_cols), sum), .groups = "drop") %>%
+    mutate(across(all_of(gf_cols), ~ .x / sum(.x)))
+}
+
+run_null_model <- function(genet, ref_df){
+  
+  OTU_nb <- genet_family_OTU_nb(genet)
+  
+  otu_expanded <- expand_otu(OTU_nb)
+  
+  sim <- assign_growth_null(otu_expanded, ref_df)
+  
+  aggregate_null(sim)
+}
+
+permute_within_family <- function(dataset, growth_forms, family_map){
+  
+  permuted <- dataset
+  
+  for(i in seq_len(nrow(family_map))){
+    
+    clades <- family_map$Clades[[i]]
+    
+    # shuffle growth form matrix rows uniquement dans la famille
+    permuted[permuted$Clade %in% clades, growth_forms] <-
+      permuted[permuted$Clade %in% clades, growth_forms][
+        sample(sum(permuted$Clade %in% clades)), 
+      ]
+  }
+  
+  permuted
+}
+
+bray_ref_permutation <- function(dataset, n_perm = 999){
+  
+  surveys <- c("Bota", "Sper01", "ITS2", "18S")
+  growth_forms <- c("terrestrial","tree","treelet","liana","shrub",
+                    "vine","epilithic","parasite","hemi.epiphyte")
+  
+  # REF matrix
+  ref <- dataset %>%
+    dplyr::select(Clade, all_of(growth_forms)) %>%
+    dplyr::mutate(total = rowSums(across(all_of(growth_forms))))
+  
+  # normalisation REF (proportions par clade)
+  ref_mat <- as.matrix(ref[, growth_forms])
+  rownames(ref_mat) <- ref$Clade
+  
+  results <- list()
+  
+  for (s in surveys){
+    
+    survey_mat <- dataset %>%
+      dplyr::select(Clade, all_of(growth_forms)) %>%
+      dplyr::mutate(total = rowSums(across(all_of(growth_forms))))
+    
+    survey_mat <- as.matrix(survey_mat[, growth_forms])
+    rownames(survey_mat) <- dataset$Clade
+    
+    for (f in growth_forms){
+      
+      # poids = proportion du growth form dans chaque clade
+      w <- ref_mat[, f]
+      w <- w / sum(w, na.rm = TRUE)
+      
+      # --- OBSERVED DISTANCE ---
+      T_obs <- sum(abs(ref_mat - survey_mat) * w) /
+        sum(ref_mat + survey_mat + 1e-10)
+      
+      # --- NULL DISTRIBUTION ---
+      T_perm <- numeric(n_perm)
+      
+      for (b in 1:n_perm){
+        
+        perm_w <- sample(w)  # permutation intra-clade simple
+        
+        T_perm[b] <- sum(abs(ref_mat - survey_mat) * perm_w) /
+          sum(ref_mat + survey_mat + 1e-10)
+      }
+      
+      # --- p-value ---
+      p_val <- (1 + sum(T_perm >= T_obs)) / (n_perm + 1)
+      
+      results[[length(results) + 1]] <- data.frame(
+        survey = s,
+        growth_form = f,
+        T_obs = T_obs,
+        p_value = p_val
+      )
+    }
+  }
+  
+  bind_rows(results)
+}
+
+
 # ===== 2. SPATIAL PATTERNS =====
 
 # ---- Give names ----
@@ -661,12 +809,20 @@ get_spearman <- function(x, y){
   
   # pas assez de données
   if(nrow(df) < 3){
-    return(list(Correlation = NA, p.value = NA))
+    return(list(
+      Correlation = NA,
+      p.value = NA,
+      status = "too_few_obs"
+    ))
   }
   
   # variance nulle
   if(sd(df$x) == 0 || sd(df$y) == 0){
-    return(list(Correlation = NA, p.value = NA))
+    return(list(
+      Correlation = NA,
+      p.value = NA,
+      status = "zero_variance"
+    ))
   }
   
   # test sécurisé
@@ -676,12 +832,17 @@ get_spearman <- function(x, y){
   )
   
   if(is.null(ct)){
-    return(list(Correlation = NA, p.value = NA))
+    return(list(
+      Correlation = NA_real_,
+      p.value = NA_real_,
+      status = "cor_test_failed"
+    ))
   }
   
   list(
     Correlation = unname(ct$estimate),
-    p.value = ct$p.value
+    p.value = ct$p.value,
+    status = "ok"
   )
 }
 

@@ -38,6 +38,26 @@ plot_log_log <- function(df_H2){
     dplyr::group_by(Marker) %>%
     dplyr::summarise(n = n(), .groups = "drop")
   
+  # Test Stat
+  library(broom)
+  # Model par facette
+  model_df <- df_H2 %>%
+    group_by(Marker) %>%
+    tidyr::nest() %>%
+    mutate(
+      model = purrr::map(data, ~ lm(
+        log(Reads + 1) ~ log(Basal_Area + 1) * tree,
+        data = .x
+      ))
+    )
+  # Extraction des valeurs
+  p_table <- model_df %>%
+    mutate(
+      anova = purrr::map(model, ~ car::Anova(.x, type = 2)),
+      p_interaction = purrr::map_dbl(anova, ~ .x["log(Basal_Area + 1):tree", "Pr(>F)"])
+    ) %>%
+    dplyr::select(Marker, p_interaction)
+  
   # PLOT
   ggplot(df_H2, aes(x = log(Basal_Area+1), y = log(Reads+1))) +
     # facet_wrap
@@ -55,10 +75,17 @@ plot_log_log <- function(df_H2){
       label.x = 1,
       label.y = 14
     ) +
+    geom_text(
+      data = p_table,
+      aes(x = 1, y = 12.5, label = paste0("p(tree) = ", signif(p_interaction, 2))),
+      inherit.aes = FALSE,
+      hjust = 0,
+      size = 4
+    )+
     # n per facet
     geom_text(
       data = n_df,
-      aes(x = 1, y = 13, label = paste0("n = ", n)),
+      aes(x = 1, y = 11, label = paste0("n = ", n)),
       inherit.aes = FALSE,
       hjust = 0,
       size = 4
@@ -618,7 +645,7 @@ corr_violin_plot <- function(config_tab){
     # boxplot
     geom_violin(
       width = 0.8,
-      outlier.size = 1.5,
+      #outlier.size = 1.5,
       fill = "grey80",
       color = "black"
     ) +
@@ -660,6 +687,19 @@ corr_violin_plot <- function(config_tab){
     
     theme_minimal(base_size = 11) +
     
+    labs(
+      x = "Correlation coefficient"
+    ) + 
+    scale_x_continuous(
+      breaks = seq(0, 1, 0.2),
+      limits = c(-0.15, 1.1)  # ← important
+    )+
+    # theme_bw() +
+    # theme(
+    #   strip.text.x = element_text(face = "bold",size=14),
+    #   strip.text.y = element_text(face = "bold",size=14)
+    #   )
+    
     theme(
       panel.grid = element_blank(),
       #axis.title = element_blank(),
@@ -668,25 +708,17 @@ corr_violin_plot <- function(config_tab){
       axis.line = element_line(color = "gray"),  # Lignes des axes en noir
       axis.text = element_text(color = "black"),  # Texte des axes en noir
       axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
-      
+
       # strips
       strip.background = element_blank(),
       strip.placement = "outside",
       strip.text.x = element_text(face = "bold",size=14),
       strip.text.y.left = element_text(angle = 0, face = "bold",size=14),
-      
+
       # axes
       axis.text.x.top = element_text(face = "bold"),
       axis.text.x.bottom = element_text(size = 13),
       axis.text.y = element_text(size = 14)
-    ) +
-    
-    labs(
-      x = "Correlation coefficient"
-    ) + 
-    scale_x_continuous(
-      breaks = seq(0, 1, 0.2),
-      limits = c(-0.15, 1.1)  # ← important
     )
 }
 
@@ -867,14 +899,14 @@ morpho_corr_bar <- function(marker = "Sper01", level = "Species", metric = "HYP"
     )
 }
 
-morpho_corr_df <- function(marker = "Sper01", level = "Species", metric = "HYP") {
+morpho_corr_df <- function(marker = "Sper01", level = "Species", metric = "HYP", corr) {
   
   morpho <- import_plants_morpho() %>%
     mutate(Species = gsub("_", " ", Species))
   
   morpho_agg <- aggregate_morpho(morpho, level, median)
   
-  model <- tab_rar %>%
+  model <- df_H3 %>%
     dplyr::filter(
       Level == level,
       g.Marker == marker,
@@ -886,21 +918,45 @@ morpho_corr_df <- function(marker = "Sper01", level = "Species", metric = "HYP")
   model_morpho_df <- inner_join(model, morpho_agg, by = level) %>%
     dplyr::select(-!!level, -n)
   
-  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")[, "Model"]
+  res_list <- lapply(names(model_morpho_df), function(var) {
+    
+    if (var == "Model") return(NULL)
+    
+    test <- cor.test(
+      model_morpho_df[[var]],
+      model_morpho_df$Model,
+      method = corr,
+      use = "pairwise.complete.obs"
+    )
+    
+    data.frame(
+      Variable = var,
+      Correlation = test$estimate,
+      p.value = test$p.value
+    )
+  })
   
-  data.frame(
-    Variable = names(corr_vec),
-    Correlation = corr_vec,
-    Level = level
-  ) %>%
-    dplyr::filter(Variable != "Model")
+  res_df <- bind_rows(res_list)
+  
+  res_df <- res_df %>%
+    mutate(
+      signif = case_when(
+        p.value < 0.001 ~ "***",
+        p.value < 0.01  ~ "**",
+        p.value < 0.05  ~ "*",
+        TRUE ~ ""
+      ),
+      Level = level
+    )
+  
+  return(res_df)
 }
 
-morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP"){
+morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP", Corr){
   
   levels <- c("Family", "Genus", "Species")
   
-  corr_all <- map_dfr(levels, ~ morpho_corr_df(level = .x, marker = Marker, metric = Metric))
+  corr_all <- map_dfr(levels, ~ morpho_corr_df(level = .x, marker = Marker, metric = Metric, corr = Corr))
   
   # Colors
   colors <- list(
@@ -950,6 +1006,7 @@ morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP"){
     y = Variable,
     fill = Correlation
   )) +
+    coord_cartesian(xlim = c(-1, 1))+
     geom_col() +
     scale_y_discrete(labels = labels_source) +
     # facet_wrap
@@ -979,47 +1036,89 @@ morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP"){
       
       # axes
       axis.text.x.bottom = element_text(size = 11),
-      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold",size = 11)
+      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold",size = 11),
+      
+      title = element_text(face = "bold", size = 16),
     ) +
     labs(
-      x = "Pearson r"
+      x = Corr,
+      fill = "r"
+    ) +
+    geom_text(
+      aes(label = signif),
+      size = 4,
+      fontface = "bold",
+      color = "black",
+      nudge_x = 0.05
     )
 }
 
 # ==== 3. DIVERSITY PATTERNS ====
 
 # Random forest function
-rand_for_IncMSE <- function(data_pixel){
+# rand_for_IncMSE <- function(data_pixel){
+#   
+#   set.seed(123) # For reproductibility
+#   
+#   rf_model <- randomForest(
+#     Metric ~ .,              # toutes les variables explicatives
+#     data = data_pixel %>% dplyr::select(-x, -y, -sample_loc),  # enlever coordonnées si non pertinentes
+#     ntree = 500,
+#     importance = TRUE
+#   )
+#   
+#   # # importance des variables
+#   # importance(rf_model)
+#   # varImpPlot(rf_model)
+#   
+#   # Plot
+#   var_imp <- as.data.frame(importance(rf_model))
+#   var_imp$Variable <- rownames(var_imp)
+#   
+#   p <- ggplot(var_imp, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
+#     geom_col(fill = "grey") +
+#     coord_flip() +
+#     theme_light() +
+#     #scale_y_continuous(limits = c(0, 20)) + # Homogène scaling
+#     theme(
+#       plot.title = element_text(hjust = 0,size = 14, face="bold"),
+#       axis.text.y.left = element_text(face="bold")
+#     )
+#   
+#   return(list(p, rf_model, data_pixel))
+# }
+
+rand_for_IncMSE_rep <- function(data_pixel, nrep = 100){
   
-  set.seed(123) # For reproductibility
+  library(randomForest)
+  library(dplyr)
   
-  rf_model <- randomForest(
-    Metric ~ .,              # toutes les variables explicatives
-    data = data_pixel %>% dplyr::select(-x, -y, -sample_loc),  # enlever coordonnées si non pertinentes
-    ntree = 500,
-    importance = TRUE
-  )
-  
-  # # importance des variables
-  # importance(rf_model)
-  # varImpPlot(rf_model)
-  
-  # Plot
-  var_imp <- as.data.frame(importance(rf_model))
-  var_imp$Variable <- rownames(var_imp)
-  
-  p <- ggplot(var_imp, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
-    geom_col(fill = "grey") +
-    coord_flip() +
-    theme_light() +
-    #scale_y_continuous(limits = c(0, 20)) + # Homogène scaling
-    theme(
-      plot.title = element_text(hjust = 0,size = 14, face="bold"),
-      axis.text.y.left = element_text(face="bold")
+  results <- replicate(nrep, {
+    
+    rf_model <- randomForest(
+      Metric ~ .,
+      data = data_pixel %>% dplyr::select(-x, -y, -sample_loc),
+      ntree = 500,
+      importance = TRUE
     )
+    
+    importance(rf_model)[, "%IncMSE"]
+    
+  }, simplify = "matrix")
   
-  return(list(p, rf_model, data_pixel))
+  # mise en dataframe long
+  df_imp <- as.data.frame(results)
+  df_imp$Variable <- rownames(df_imp)
+  
+  df_long <- tidyr::pivot_longer(df_imp,
+                                 cols = -Variable,
+                                 names_to = "replicate",
+                                 values_to = "importance")
+  
+  return(df_long)
 }
+
+
 
 # --- Accumulated Local Effects ---
 plot_res_by_features <- function(res, features){
@@ -1033,6 +1132,75 @@ plot_res_by_features <- function(res, features){
   })
   
   return(plot_list)
+}
+
+plot_RF_stat <- function(df_plot){
+  
+  # Ordering
+  df_plot$pattern <- factor(
+    df_plot$pattern,
+    levels = c("Bota","ITS2","Sper01")
+  )
+  
+  df_plot$Variable <- factor(
+    df_plot$Variable,
+    levels = c("Al","Ca","Fe","C:N","K","Na","light","wetness")
+  )
+  
+  # Noramliser
+  df_plot <- df_plot %>%
+    group_by(pattern, replicate) %>%
+    mutate(
+      importance = importance / sum(importance)
+    ) %>%
+    ungroup()
+  
+  # Test et lettres
+  letters_df <- df_plot %>%
+    group_by(Variable) %>%
+    do({
+      
+      # Kruskal
+      kw <- kruskal.test(importance ~ pattern, data = .)
+      
+      # Dunn post-hoc
+      dunn <- FSA::dunnTest(importance ~ pattern, data = ., method = "bh")
+      
+      # Lettres
+      cld <- rcompanion::cldList(
+        P.adj ~ Comparison,
+        data = dunn$res,
+        threshold = 0.05
+      )
+      
+      cld$Variable <- unique(.$Variable)
+      cld
+    }) %>%
+    ungroup() %>%
+    dplyr::rename(pattern = Group) %>%
+    mutate(pattern = recode(pattern,
+                            "Sper1" = "Sper01"))
+  
+  # Plot
+  ggplot(df_plot, aes(x = pattern, y = importance)) +
+    geom_boxplot() +
+    facet_wrap(~Variable, scales = "fixed") +
+    geom_text(
+      data = letters_df,
+      aes(x = pattern, y = Inf, label = MonoLetter),  # position ajustable
+      inherit.aes = FALSE,
+      vjust = 1.5,
+      size = 5,
+      color = "red"
+    ) +
+    theme_bw() +
+    theme(
+      strip.text.x = element_text(face = "bold",size=12),
+      axis.title.x = element_blank(),
+      axis.title.y = element_text(size=13),
+      axis.text.x = element_text(size=11,face="bold")
+      ) +
+    labs(y="Relative importance (%)")
 }
 
 # ==== < Basic > ====
@@ -1240,7 +1408,7 @@ plot_grid_interp <- function(grid, factor = 2) {
 }
 
 # Fonction de plot  with soft theme
-plot_grid_interp_soft <- function(grid, factor = 3) {
+plot_grid_interp_soft <- function(grid, factor = 1) {
   
   fine <- interpolate_grid_2D(grid, factor)
   
@@ -1260,12 +1428,11 @@ plot_grid_interp_soft <- function(grid, factor = 3) {
     ) +
     coord_fixed() +
     theme_light()+
-    
-    # supprimer axes et ticks
+    #theme_void()+
     theme(
       legend.margin = ggplot2::margin(t = -10),
-      plot.title = element_text(hjust = 0,size = 14, face="bold"),
-      plot.margin = ggplot2::margin(0, 20, 0, 20)
+      plot.title = element_text(hjust = 0,size = 14, face="bold")
+      #plot.margin = ggplot2::margin(0, 20, 0, 20)
     )
 }
 

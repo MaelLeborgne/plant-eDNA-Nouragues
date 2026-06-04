@@ -68,6 +68,24 @@ list_by_level <- config_tab %>%
   map(~ setNames(.x$tax_list, .x$Marker))
 
 # --------------------------------------------------
+# Merge eDNA markers
+# --------------------------------------------------
+list_by_level_edna <- map(list_by_level, function(x){
+
+  edna <- unique(c(
+    x[["Sper01"]],
+    x[["ITS2"]],
+    x[["18S"]]
+  ))
+
+  list(
+    Bota = x[["Bota"]],
+    eDNA = edna,
+    REF  = x[["REF"]]
+  )
+})
+
+# --------------------------------------------------
 # SAVE
 # --------------------------------------------------
 save( list_by_level,
@@ -83,40 +101,63 @@ save( list_by_level,
 library(ggVennDiagram)
 library(ggplot2)
 
-plot_list <- lapply(names(list_by_level), function(lvl){
-  data <- list_by_level[[lvl]]
+plot_list <- lapply(names(list_by_level_edna), function(lvl){
+  data <- list_by_level_edna[[lvl]]
   
   col <- switch(lvl,
                 "Family"  = "darkorange",
                 "Genus"   = "steelblue",
                 "Species" = "forestgreen")
   
-  ggVennDiagram(data) +
+  ggVennDiagram(data)+#, label = "percent") +
     scale_fill_gradient(low = "white", high = col) +
     ggtitle(lvl) +
+  guides(fill = guide_legend(
+    override.aes = list(size = 10)
+  ))+
   theme(
-    plot.title = element_text(face = "bold")
+    plot.title = element_text(face = "bold", size = 15),
+    legend.position = "none"
   )
 })
 
-plot_list
+wrap_plots(plot_list, ncol = 3)
+
 ```
 
 ### Upset
 
 ```{r}
+# --------------------------------------------------
+# Export tables
+# --------------------------------------------------
+library(UpSetR)
+library(openxlsx)
+
+# d1 <- fromList(list_by_level[["Family"]])
+# d2 <- fromList(list_by_level[["Genus"]])
+# d3 <- fromList(list_by_level[["Species"]])
+# 
+# write.xlsx(
+#   list(
+#     Family = d1,
+#     Genus = d2,
+#     Species = d3
+#   ),
+#   "~/Bureau/Venn_diagram.xlsx"
+# )
 
 # --------------------------------------------------
 # Plots
 # --------------------------------------------------
-library(UpSetR)
+
 
 # Size of total numbers
 set_size <- list("Family"=200, "Genus"=600, "Species"=1600)
 
 # List of plots : Family, Genus, Species
-plot_list <- lapply(names(list_by_level), function(lvl){
-  data_upset <- fromList(list_by_level[[lvl]])
+plot_list <- lapply(names(list_by_level_edna), function(lvl){
+  data_upset <- fromList(list_by_level_edna[[lvl]])
   
   upset(data_upset,
         nsets = ncol(data_upset),
@@ -318,7 +359,9 @@ metabarlist <- import_genet(
 
 # Relative dominance
 Ab_Sper01 <- rank_ab_tib_genet(metabarlist, "family") %>%
-  dplyr::rename(Family = family)
+  dplyr::rename(Family = family) %>%
+  dplyr::select(Family, Reads) %>%
+  mutate(Marker = "Sper01")
 
 # --------------------------------------------------
 # Import ITS2
@@ -332,7 +375,9 @@ metabarlist <- import_genet(
 
 # Relative dominance
 Ab_ITS2 <- rank_ab_tib_genet(metabarlist, "family") %>%
-  dplyr::rename(Family = family)
+  dplyr::rename(Family = family) %>%
+  dplyr::select(Family, Reads) %>%
+  mutate(Marker = "ITS2")
 
 # --------------------------------------------------
 # Import 18S
@@ -349,18 +394,21 @@ Ab_18S <- rank_ab_tib_genet(metabarlist, "family") %>%
   dplyr::rename(Family = family)
 
 # --------------------------------------------------
-# Plot log-log
+# SAVE
 # --------------------------------------------------
 
 # JOIN
-Ab_join <- full_join(Ab_bota, Ab_Sper01, by = "Family") %>%
-  full_join(Ab_ITS2, by = "Family")
+df_Sper01 <- inner_join(Ab_bota, Ab_Sper01, by = "Family")
+df_ITS2 <- inner_join(Ab_bota, Ab_ITS2, by = "Family")
+df_H2 <- bind_rows(df_Sper01, df_ITS2)
 
-p <- plot_log_log(Ab_join)
+save( df_H2,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H2.RData")
 
-# ITS2
-p2 <- plot_log_log(Ab_bota, Ab_ITS2, "ITS2")
-
+# --------------------------------------------------
+# Plot log-log
+# --------------------------------------------------
+p <- plot_log_log(df_H2)
 
 
 # 🔍 Interprétation
@@ -398,14 +446,14 @@ tab_family_ref() # %>% view()
 # LOAD
 # --------------------------------------------------
 
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H1.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
 # COMBINE <2%
 # --------------------------------------------------
 
-df_reduced <- df_ab_rel_Richness
+df_reduced <- df_H1
 
 # Add Ref row
 new_row <- df_reduced[1, ]
@@ -476,11 +524,11 @@ p2 <- growth_form_plot(df_growth)
 # --------------------------------------------------
 
 # Surveys
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H1.RData",
   envir = .GlobalEnv)
 
 # Copy for modifications
-df_reduced <- df_ab_rel_Richness
+df_reduced <- df_H1
 
 # Add Ref row
 new_row <- df_reduced[1, ]
@@ -561,18 +609,18 @@ config_tab <- bind_rows(test_1, test_2)
 # --------------------------------------------------
 
 # Fill results
-df_ab_rel_Richness <- test_ab_rel_sum(config_tab)
+df_H1 <- test_ab_rel_sum(config_tab)
 
 # --------------------------------------------------
 # VIEW
 # --------------------------------------------------
-view(df_ab_rel_Richness)
+view(df_H1)
 
 # --------------------------------------------------
 # SAVE
 # --------------------------------------------------
-save( df_ab_rel_Richness,
-  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData")
+save( df_H1,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H1.RData")
 
 
 ```
@@ -586,7 +634,7 @@ save( df_ab_rel_Richness,
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.ab_rel_OTU.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H1.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
@@ -603,27 +651,47 @@ tab_ref <- tab_family_ref() %>%
   rename(REF = total)
 
 # --------------------------------------------------
+# GROWTH TABLES
+# --------------------------------------------------
+
+ref <- import_plants_nouragues() %>%
+  rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
+  dplyr::select(-starts_with("habit.")) %>%
+  dplyr::select(-c("order","genus","species")) %>%
+  mutate(Survey="REF") %>%
+  rename(Family = family)
+
+bota <- import_bota(list("Year"=2012)) %>%
+  dplyr::select(Family) %>%
+  dplyr::mutate(Survey="Bota") %>%
+  dplyr::mutate(tree = 1, terrestrial=0, treelet=0, liana=0, shrub=0, vine=0, epilithic =0, parasite=0, hemi.epiphyte=0)
+
+Sper01 <- import_genet(list("Rar"=TRUE,"Marker"="Sper01")) %>%
+  run_model(ref)
+
+# --------------------------------------------------
 # DATASET
 # --------------------------------------------------
 
 # List
 df_list <- list(
   tab_ref,
-  df_ab_rel_Richness$Result[[1]] %>% rename(Sper01 = Metric),
-  df_ab_rel_Richness$Result[[2]] %>% rename(ITS2 = Metric),
-  df_ab_rel_Richness$Result[[3]] %>% rename(`18S` = Metric),
-  df_ab_rel_Richness$Result[[4]] %>% rename(BOTA = Metric),
-  tab_fam
+  df_H1$Result[[1]] %>% rename(Sper01 = Metric),
+  df_H1$Result[[2]] %>% rename(ITS2 = Metric),
+  df_H1$Result[[3]] %>% rename(`18S` = Metric),
+  df_H1$Result[[4]] %>% rename(BOTA = Metric)
 )
 
 # Join
-dataset <- reduce(df_list, full_join, by = "Clade") %>%
+family_proportions <- reduce(df_list, full_join, by = "Clade") %>%
   replace(is.na(.), 0)
 
+
+# OTU = 1:n(), 
 # --------------------------------------------------
 # BIAS BY GROWTH TYPE
 # --------------------------------------------------
-df_bias <- bias_assign(dataset)
+perm_res <- bray_ref_permutation(dataset)
 
 # --------------------------------------------------
 # REF PROPORTION TABLE
@@ -641,119 +709,180 @@ plot_bias_growth(df_bias, ref_tab)
 ### New
 
 ```{r}
-# --------------------------------------------------
-# BIAS BY GROWTH TYPE
-# --------------------------------------------------
-df_growth <- bias_assign_new()
-
-# --------------------------------------------------
-# REF PROPORTION TABLE
-# --------------------------------------------------
-ref_tab <- tab_all_growth() # %>% view()
-
-# --------------------------------------------------
-# PLOT
-# --------------------------------------------------
-plot_bias_growth(df_growth, ref_tab)
 
 
-```
+genet_family_OTU_nb <- function(genet){
+  # Replace NA by Indet. (same as bota survey)
+  for (l in c("family","genus","species")) {
+    genet$motus[[l]][is.na(genet$motus[[l]])] <- "Indet."
+  }
+  
+  # Select OTU
+  otu_list <- select_tax(genet$motus, "family", "All")
+  
+  # # Apply otu filters
+  # otu_list <- rlang::exec(apply_filters, otu_list, !!!filters) 
+  
+  # get otu_id
+  otu_list <- otu_list %>% filter(!is.na(id)) %>% pull(id)
+  
+  # Replace : and - by . # (18S anomaly)
+  otu_list <- gsub(":", ".", otu_list)
+  otu_list <- gsub("-", ".", otu_list)
+  
+  # Select Reads from OTU_id
+  reads_filtered <- genet$reads[, colnames(genet$reads) %in% otu_list, drop = FALSE]
+  
+  # Init
+  reads_tax <- reads_filtered
+  
+  # Créer le vecteur d'espèces aligné avec les lignes
+  tax_names <- genet$motus[["family"]][
+    match(colnames(reads_filtered), genet$motus$id)
+  ]
+  
+  # OTU by family
+  OTU_nb <- table(tax_names) %>%
+    as.data.frame() %>%
+    dplyr::rename(Family = tax_names, n_otu = Freq)
+  
+  return(OTU_nb)
+}
+  
+# Expantion des famille en OTU
+expand_otu <- function(OTU_nb){
+  
+  OTU_nb %>%
+    tidyr::uncount(n_otu) %>%
+    group_by(Family) %>%
+    mutate(OTU = paste0(Family, "_", row_number())) %>%
+    ungroup() %>%
+    dplyr::select(OTU, Family)
+}
 
-# II. SPATIAL PATTERNS
+# Null Model
+assign_growth_null <- function(otu_df, ref_df){
 
-## 1. Sepcies examples
+  gf_cols <- c("terrestrial","tree","treelet","liana","shrub",
+               "vine","epilithic","parasite","hemi.epiphyte")
 
-```{r}
-p <- patch_turbo_ex(marker = "Sper01", 
-                    level = "Species",
-                    metric = "EXP",
-                    selection = c(19,9,13,2),
-                    n=4)
-```
+  fam_prob <- ref_df %>%
+    group_by(Family) %>%
+    summarise(across(all_of(gf_cols), ~ mean(.x, na.rm = TRUE)),
+              .groups = "drop") %>%
+    mutate(across(all_of(gf_cols), ~ replace_na(.x, 0)))
+
+  otu_df %>%
+    left_join(fam_prob, by = "Family") %>%
+    rowwise() %>%
+    mutate(
+      growth_form = sample(
+        gf_cols,
+        size = 1,
+        prob = c_across(all_of(gf_cols))
+      )
+    ) %>%
+    ungroup() %>%
+    mutate(value = 1) %>%
+    tidyr::pivot_wider(
+      names_from = growth_form,
+      values_from = value,
+      values_fill = 0
+    )
+}
+
+# Aggregation
+aggregate_growth <- function(df){
+
+  gf_cols <- setdiff(names(df), c("OTU","Family"))
+
+  df %>%
+    group_by(Family) %>%
+    summarise(across(all_of(gf_cols), sum), .groups = "drop") %>%
+    mutate(total = rowSums(across(all_of(gf_cols)))) %>%
+    mutate(across(all_of(gf_cols), ~ .x / total)) %>%
+    select(-total)
+}
+
+# Pipline génet réel
+build_genet_obs <- function(genet){
+  
+  OTU_nb <- genet_family_OTU_nb(genet)
+  otu_expanded <- expand_otu(OTU_nb)
+  sim <- assign_growth_null(otu_expanded, ref_df = NULL) # pas utilisé ici
+  
+  aggregate_growth(sim)
+}
+
+# Bray Curtis Stat
+T_stat <- function(x, y){
+
+  sum(abs(x - y)) / sum(x + y)
+}
+
+# Stat Obervée
+compute_T_obs <- function(genet_obs, ref){
+
+  gf_cols <- intersect(names(genet_obs), names(ref))
+
+  x <- colSums(genet_obs[, gf_cols])
+  y <- colSums(ref[, gf_cols])
+
+  T_stat(x, y)
+}
+
+# Permutation test
+run_permutation <- function(genet, ref, n_perm = 10){
+
+  OTU_nb <- genet_family_OTU_nb(genet)
+
+  T_obs <- compute_T_obs(
+    build_genet_obs(genet),
+    ref
+  )
+
+  T_null <- replicate(n_perm, {
+
+    otu_expanded <- expand_otu(OTU_nb)
+
+    sim <- assign_growth_null(otu_expanded, ref)
+
+    agg <- aggregate_growth(sim)
+
+    T_stat(colSums(agg), colSums(ref))
+  })
+
+  p_value <- (1 + sum(T_null >= T_obs)) / (n_perm + 1)
+
+  list(
+    T_obs = T_obs,
+    T_null = T_null,
+    p_value = p_value
+  )
+}
+
+# Référence
+ref <- import_plants_nouragues() %>%
+  rename_with(~ sub("^stat\\.", "", .x), starts_with("stat.")) %>%
+  dplyr::select(-starts_with("habit.")) %>%
+  dplyr::select(-c("order","genus","species")) %>%
+  mutate(Survey="REF") %>%
+  rename(Family = family)
+
+# bota <- import_bota(list("Year"=2012)) %>%
+#   dplyr::select(Family) %>%
+#   dplyr::mutate(Survey="Bota") %>%
+#   dplyr::mutate(tree = 1, terrestrial=0, treelet=0, liana=0, shrub=0, vine=0, epilithic =0, parasite=0, hemi.epiphyte=0)
 
 
-## 2. Models examples
+# RUN
+genet <- import_genet(list("Rar"=TRUE,"Marker"="Sper01")) %>%
+  run_permutation(ref)
 
-```{r}
-
-# --------------------------------------------------
-# CONFIGURATIONS
-# --------------------------------------------------
-
-i.o_conf <- expand.grid(
-  Type = "bota",
-  Level = "Species",
-  Name = "Goupia glabra",
-  Metric = c("Presence"),
-  Year = "2012",
-  Radius = 20,
-  Norm = FALSE)
-
-count_conf <- expand.grid(
-  Type = "bota",
-  Level = "Species",
-  Name = "Goupia glabra",
-  Metric = c("Count"),
-  Year = "2012",
-  Radius = 20,
-  Norm = TRUE)
-
-hyp_conf <- expand.grid(
-  Type = "bota",
-  Level = "Species",
-  Name = "Goupia glabra",
-  Metric = c("HYP"),
-  Year = "2012",
-  Radius = 10000,
-  Alpha = 1.79,
-  Norm = TRUE)
-
-exp_conf <- expand.grid(
-  Type = "bota",
-  Level = "Species",
-  Name = "Goupia glabra",
-  Metric = c("EXP"),
-  Year = "2012",
-  Radius = 10000,
-  Alpha = 1.79,
-  Beta = 0.1,
-  Norm = TRUE)
-
-genet_conf <- list(  
-  Type = "genet",
-  Level = "Species",
-  Name = "Goupia glabra",
-  Metric = "Reads",
-  Rar = TRUE,
-  Marker = c("Sper01"),
-  Norm = TRUE,
-  Filt = FALSE)
-
-config_tab <- bind_rows(list(i.o_conf, count_conf, hyp_conf, exp_conf, genet_conf))
-
-# --------------------------------------------------
-# GRID
-# --------------------------------------------------
-grid_list <- build_grids(config_tab)
-
-titles <- list(
-  "1 / 0",
-  expression(bold(Count~"("~R==20~")")),
-  expression(bold(HYP~"("~alpha==1.79~")")),
-  expression(bold(EXP~"("~alpha==1.79~","~beta==0.1~")")),
-  "Sper01 Reads"
-)
-
-# --------------------------------------------------
-# PLOT
-# --------------------------------------------------
-plot_list <- Map(function(grid, title){
-  plot_grid(grid, stems = TRUE) +
-    labs(title = title)
-}, grid_list, titles)
-
-# Wrap
-wrap_plots(plot_list, ncol = 5)
+res$p_value
+res$T_obs
+# hist(res$T_null)
+# abline(v = res$T_obs, col = "red")
 
 ```
 
@@ -830,18 +959,18 @@ config_tab <- config_tab %>%
 # --------------------------------------------------
 # RUN CALCULS
 # --------------------------------------------------
-tab_rar <- make_cor_table(config_tab)
+df_H3 <- make_cor_table(config_tab)
 
 # --------------------------------------------------
 # VIEW
 # --------------------------------------------------
-view(tab_rar)
+view(df_H3)
 
 # --------------------------------------------------
 # SAVE
 # --------------------------------------------------
-save( tab_rar,
-  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData")
+save( df_H3,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H3.RData")
 
 ```
 
@@ -852,14 +981,14 @@ save( tab_rar,
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H3.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
 # ANNEXE TABLES
 # --------------------------------------------------
 
-tab_rar %>%
+df_H3 %>%
     filter(
       Level == "Family",
       g.Marker %in% c("Sper01","ITS2","18S"),
@@ -867,7 +996,7 @@ tab_rar %>%
     ) %>%
   corr_tab_plot()
 
-tab_rar %>%
+df_H3 %>%
     filter(
       Level == "Genus",
       g.Marker %in% c("Sper01","ITS2"),
@@ -875,7 +1004,7 @@ tab_rar %>%
     ) %>%
   corr_tab_plot()
 
-tab_rar %>%
+df_H3 %>%
     filter(
       Level == "Species",
       g.Marker %in% c("Sper01","ITS2"),
@@ -893,13 +1022,13 @@ tab_rar %>%
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H3.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
 # VIOLIN PLOT
 # --------------------------------------------------
-tab_rar %>%
+df_H3 %>%
     filter(
       Level %in% c("Family","Genus","Species"),
       g.Marker %in% c("Sper01","ITS2"),
@@ -917,7 +1046,7 @@ tab_rar %>%
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H3.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
@@ -967,31 +1096,33 @@ mat_Sper01
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H3.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
 # PLOT
 # --------------------------------------------------
-morpho_corr_bar_strip(Marker = "Sper01", Metric = "EXP")
+morpho_corr_bar_strip(Marker = "Sper01", Metric = "EXP", Corr = "pearson")
+
 ```
 
 
 #### View variability
 ```{r}
 
-p1 <- morpho_corr_bar_strip(Marker = "Sper01", Metric = "EXP") +
+p1 <- morpho_corr_bar_strip(Marker = "Sper01", Metric = "EXP", Corr = "pearson") +
   labs(title = "Sper01 / EXP")
-p2 <- morpho_corr_bar_strip(Marker = "Sper01", Metric = "I.O") +
+p2 <- morpho_corr_bar_strip(Marker = "Sper01", Metric = "I.O", Corr = "pearson") +
   labs(title = "Sper01 / I.O")
 
-p3 <- morpho_corr_bar_strip(Marker = "ITS2", Metric = "EXP") +
+p3 <- morpho_corr_bar_strip(Marker = "ITS2", Metric = "EXP", Corr = "pearson") +
   labs(title = "ITS2 / EXP")
-p4 <- morpho_corr_bar_strip(Marker = "ITS2", Metric = "I.O") +
+p4 <- morpho_corr_bar_strip(Marker = "ITS2", Metric = "I.O", Corr = "pearson") +
   labs(title = "ITS2 / I.O")
 
-(p1+p2) / (p3+p4)
+# (p1+p2) / (p3+p4)
 
+p2/p4
 
 ```
 
@@ -1023,18 +1154,18 @@ config_rad <- expand.grid(
 # --------------------------------------------------
 # RUN CALCULS
 # --------------------------------------------------
-tab_rad_H1 <- make_cor_table(config_rad)
+df_H4 <- make_cor_table(config_rad)
 
 # --------------------------------------------------
 # VIEW
 # --------------------------------------------------
-view(tab_rad_H1)
+view(df_H4)
 
 # --------------------------------------------------
 # SAVE
 # --------------------------------------------------
-save( tab_rad_H1,
-  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_H1.RData")
+save( df_H4,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H4.RData")
 
 ```
 
@@ -1043,23 +1174,22 @@ save( tab_rad_H1,
 # --------------------------------------------------
 # LOAD
 # --------------------------------------------------
-load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rad_H1.RData",
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H4.RData",
   envir = .GlobalEnv)
 
 # --------------------------------------------------
 # PLOT
 # --------------------------------------------------
-p <- plot_correlogramme(tab_rad_H1)
+p <- plot_correlogramme(df_H4)
 p
 
 ```
 
 ## 2. Random Forest
 
-### A. Main figure (OK)
+### A. Create
 
 ```{r}
-
 # --------------------------------------------------
 # IMPORT DIV PATTERNS
 # --------------------------------------------------
@@ -1114,14 +1244,58 @@ data_pixel_ITS2 <- inner_join(ITS2_H1_grid$df, abiotic, by = c("x","y"))
 # RANDOM FORESTS
 # --------------------------------------------------
 
-# -- BOTA --
-res_bota <- rand_for_IncMSE(data_pixel_bota)
+# # -- BOTA --
+# res_bota <- rand_for_IncMSE(data_pixel_bota)
+# 
+# # -- Sper01 ---
+# res_Sper01 <- rand_for_IncMSE(data_pixel_Sper01)
+# 
+# # -- ITS2 ---
+# res_ITS2 <- rand_for_IncMSE(data_pixel_ITS2)
 
-# -- Sper01 ---
-res_Sper01 <- rand_for_IncMSE(data_pixel_Sper01)
+## Random Forests 500*100
+imp1 <- rand_for_IncMSE_rep(data_pixel_bota) %>% mutate(pattern = "Bota")
+imp2 <- rand_for_IncMSE_rep(data_pixel_Sper01) %>% mutate(pattern = "Sper01")
+imp3 <- rand_for_IncMSE_rep(data_pixel_ITS2) %>% mutate(pattern = "ITS2")
 
-# -- ITS2 ---
-res_ITS2 <- rand_for_IncMSE(data_pixel_ITS2)
+df_RF <- bind_rows(imp1, imp2, imp3)
+
+# --------------------------------------------------
+# SAVE
+# --------------------------------------------------
+save( df_RF,
+  file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_RF.RData")
+```
+
+
+
+### Test stat (letters)
+
+```{r}
+# --------------------------------------------------
+# LOAD
+# --------------------------------------------------
+
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_RF.RData",
+  envir = .GlobalEnv)
+
+# --------------------------------------------------
+# PLOT
+# --------------------------------------------------
+
+p <- plot_RF_stat(df_RF)
+
+```
+
+
+### Main figure (OK)
+
+```{r}
+# --------------------------------------------------
+# LOAD
+# --------------------------------------------------
+save(file = "~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_RF.RData",
+     envir = .GlobalEnv)
 
 # --------------------------------------------------
 # PLOT
@@ -1140,29 +1314,32 @@ p2 <- plot_grid_interp_soft(Sper01_H1_grid) +
 p3 <- plot_grid_interp_soft(ITS2_H1_grid) + 
   labs(title = "(c)", caption = "", fill = "H1")
 
-## Random Forests
-# -- BOTA --
-p4 <- res_bota[[1]] +
-  labs(y = "%IncMSE", x = "", title = "(d)")
-
-# -- Sper01 ---
-p5 <- res_Sper01[[1]] +
-  labs(y = "%IncMSE", x = "", title = "(e)")
-
-# -- ITS2 ---
-p6 <- res_ITS2[[1]] +
-  labs(y = "%IncMSE", x = "", title = "(f)")
+# ## Random Forests
+# # -- BOTA --
+# p4 <- res_bota[[1]] +
+#   labs(y = "%IncMSE", x = "", title = "(d)")
+# 
+# # -- Sper01 ---
+# p5 <- res_Sper01[[1]] +
+#   labs(y = "%IncMSE", x = "", title = "(e)")
+# 
+# # -- ITS2 ---
+# p6 <- res_ITS2[[1]] +
+#   labs(y = "%IncMSE", x = "", title = "(f)")
 
 ## Patchwork
+plot_list <- list(p1,p2,p3,p4,p5,p6)
+wrap_plots(plot_list, ncol = 3)
+
 (p1 | p2 | p3) / (p4 | p5 | p6)
 
 # --------------------------------------------------
 # CORRELATIONS
 # --------------------------------------------------
 
-cor(bota_H1_grid$df$Metric, Sper01_H1_grid$df$Metric, method="spearman")
-cor(bota_H1_grid$df$Metric, ITS2_H1_grid$df$Metric, method="spearman")
-cor(Sper01_H1_grid$df$Metric, ITS2_H1_grid$df$Metric, method="spearman")
+cor.test(bota_H1_grid$df$Metric, Sper01_H1_grid$df$Metric, method="spearman")
+cor.test(bota_H1_grid$df$Metric, ITS2_H1_grid$df$Metric, method="spearman")
+cor.test(Sper01_H1_grid$df$Metric, ITS2_H1_grid$df$Metric, method="spearman")
 
 ```
 
@@ -1271,6 +1448,47 @@ ggplot(corr_df, aes(Var1, Var2, fill = Correlation)) +
 
 ```
 
+
+# EXPORTATION OF ALL TABLES
+
+```{r}
+library(openxlsx)
+
+# --------------------------------------------------
+# LOAD
+# --------------------------------------------------
+
+# H1
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H1.RData",
+  envir = .GlobalEnv)
+
+# H2
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H2.RData",
+  envir = .GlobalEnv)
+
+# H3
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H3.RData",
+  envir = .GlobalEnv)
+
+# H4
+load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.df_H4.RData",
+  envir = .GlobalEnv)
+
+
+# --------------------------------------------------
+# WRITE
+# --------------------------------------------------
+
+write.xlsx(
+  list(
+    H1_growth_forms = df_H1,
+    H2_abundance = df_H2,
+    H3_spatial = df_H3,
+    H4_diversity = df_H4
+  ),
+  "~/Bureau/supplementary_tables.xlsx"
+)
+```
 
 
 
