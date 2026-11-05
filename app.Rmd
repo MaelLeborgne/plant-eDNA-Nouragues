@@ -62,7 +62,7 @@ All the data are in the folder `Donnees/`, next to the folder of this program.
 | Botanical inventories | `Bota/Nour_2012.csv`, `Nour_2022.csv`                      | G. Sellan, A. Mirabelle   |
 | eDNA (MOTUs × samples) | `Irene_genet/*.rds`                                       | I. Calderón, A. Maniouloux |
 | Samples and environment | `Zinger_plants_nouragues/Zinger_et_al_metabar_PP1_samples.txt` | L. Zinger             |
-| Reference checklist   | `Zinger_plants_nouragues/METABAR_plantes/metadata/Plants_Nouragues2001.xls` | Bongers et al. (2001) |
+| Reference checklist   | `Zinger_plants_nouragues/Plants_Nouragues2001.xls`         | Bongers et al. (2001)     |
 | Morphological traits  | `Giacomo_plant_morpho/Appendix_S2-6___S8-13.xlsx`          | Vleminckx et al. (2021)   |
 
 ## Vocabulary

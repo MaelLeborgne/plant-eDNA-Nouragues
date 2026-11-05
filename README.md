@@ -46,7 +46,7 @@ parent_folder/
     │   └── Sper01_mblist_annot_metabar_clean_clust97_RAR.rds
     └── Zinger_plants_nouragues/
         ├── Zinger_et_al_metabar_PP1_samples.txt
-        └── METABAR_plantes/metadata/Plants_Nouragues2001.xls
+        └── Plants_Nouragues2001.xls
 ```
 
 ## Usage

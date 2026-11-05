@@ -199,7 +199,6 @@ import_plants_nouragues <- function(){
 
   # Read XLS
   data <- read_excel(file.path(DATA_PATH, "Zinger_plants_nouragues",
-                               "METABAR_plantes", "metadata",
                                "Plants_Nouragues2001.xls")) %>%
     dplyr::filter(habit.highforest == 1)
 
