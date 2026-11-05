@@ -13,8 +13,8 @@ library(readxl)    # Read Excel files
 # which is the project folder when app.Rmd is knitted or opened in RStudio.
 PROJECT_PATH <- getwd()
 
-# Raw data files
-DATA_PATH <- file.path(PROJECT_PATH, "data")
+# Raw data files, in the folder Donnees next to the folder of the program
+DATA_PATH <- file.path(dirname(PROJECT_PATH), "Donnees")
 
 # Intermediate results that are long to compute
 CACHE_PATH <- file.path(PROJECT_PATH, "ADNe_Nourague_2026_files")
