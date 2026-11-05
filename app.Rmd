@@ -29,9 +29,9 @@ Open `ADNe_Nourague_2026.Rproj` in RStudio and knit this file, or run the chunks
 in order. The working directory must be the folder of this file.
 
 The long computations (`df_H1`, `df_H3`, `df_RF`...) are saved in
-`ADNe_Nourague_2026_files/` and read from there. Set `RECOMPUTE` to `TRUE` below
-to run them again from the raw data. This takes much longer, and the random
-forests will give slightly different values from the report.
+`ADNe_Nourague_2026_files/` the first time and read from there afterwards. Set
+`RECOMPUTE` to `TRUE` below to run them again from the raw data. The random
+forests then give slightly different values from the report.
 
 ```{r load}
 RECOMPUTE <- FALSE

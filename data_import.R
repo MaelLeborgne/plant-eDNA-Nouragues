@@ -41,6 +41,7 @@ cached <- function(name, compute, recompute = FALSE){
   # Compute and save, the object has the same name as the result
   env <- new.env()
   env[[name]] <- compute()
+  dir.create(CACHE_PATH, showWarnings = FALSE)
   save(list = name, envir = env, file = file)
 
   return(env[[name]])
