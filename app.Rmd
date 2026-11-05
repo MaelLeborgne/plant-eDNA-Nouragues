@@ -55,7 +55,7 @@ set.seed(123)
 
 ## Data
 
-All the data are in the folder `Donnees/`, next to the folder of this program.
+All the data are in the folder `Data-Nouragues-2026/`, next to the folder of this program.
 
 | Data                  | File                                                       | Source                    |
 |-----------------------|------------------------------------------------------------|---------------------------|

@@ -26,12 +26,12 @@ The study compares two views of the plants of the Petit Plateau plot (Nouragues 
 | Botanical inventories 2012 and 2022 | `Nour_2012.csv`, `Nour_2022.csv` | Guyafor network, access granted by A. Mirabelle | Contact the data owners |
 | Cleaned eDNA data | `*_mblist_annot_metabar_clean*.rds` | L. Zinger, cleaned by A. Maniouloux and I. Calderón-Sanou | Contact the data owners |
 
-The program expects a folder `Donnees` next to the folder of the program:
+The program expects a folder `Data-Nouragues-2026` next to the folder of the program:
 
 ```
 parent_folder/
 ├── plant-eDNA-Nouragues/              (this repository)
-└── Donnees/
+└── Data-Nouragues-2026/
     ├── Bota/
     │   ├── Nour_2012.csv
     │   └── Nour_2022.csv
