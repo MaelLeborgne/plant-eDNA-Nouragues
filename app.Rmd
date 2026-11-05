@@ -886,6 +886,105 @@ res$T_obs
 
 ```
 
+# II. SPATIAL PATTERNS
+
+## 1. Sepcies examples
+
+```{r}
+p <- patch_turbo_ex(marker = "Sper01", 
+                    level = "Species",
+                    metric = "EXP",
+                    selection = c(19,9,13,2),
+                    n=4)
+```
+
+
+## 2. Models examples
+
+```{r}
+
+# --------------------------------------------------
+# CONFIGURATIONS
+# --------------------------------------------------
+
+i.o_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("Presence"),
+  Year = "2012",
+  Radius = 20,
+  Norm = FALSE)
+
+count_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("Count"),
+  Year = "2012",
+  Radius = 20,
+  Norm = TRUE)
+
+hyp_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("HYP"),
+  Year = "2012",
+  Radius = 10000,
+  Alpha = 1.79,
+  Norm = TRUE)
+
+exp_conf <- expand.grid(
+  Type = "bota",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = c("EXP"),
+  Year = "2012",
+  Radius = 10000,
+  Alpha = 1.79,
+  Beta = 0.1,
+  Norm = TRUE)
+
+genet_conf <- list(  
+  Type = "genet",
+  Level = "Species",
+  Name = "Goupia glabra",
+  Metric = "Reads",
+  Rar = TRUE,
+  Marker = c("Sper01"),
+  Norm = TRUE,
+  Filt = FALSE)
+
+config_tab <- bind_rows(list(i.o_conf, count_conf, hyp_conf, exp_conf, genet_conf))
+
+# --------------------------------------------------
+# GRID
+# --------------------------------------------------
+grid_list <- build_grids(config_tab)
+
+titles <- list(
+  expression(bold("1 / 0"~"("~R==20~")")),
+  expression(bold(Count~"("~R==20~")")),
+  expression(bold(HYP~"("~alpha==1.79~")")),
+  expression(bold(EXP~"("~alpha==1.79~","~beta==0.1~")")),
+  "Sper01 Reads"
+)
+
+# --------------------------------------------------
+# PLOT
+# --------------------------------------------------
+plot_list <- Map(function(grid, title){
+  plot_grid(grid, stems = TRUE) +
+    labs(title = title)
+}, grid_list, titles)
+
+# Wrap
+wrap_plots(plot_list, ncol = 5)
+
+```
+
+
 ## 3. Correlation tab
 
 ### A. Create (OK)
@@ -1126,6 +1225,131 @@ p2/p4
 
 ```
 
+
+### Annexe : distribution of traits
+
+```{r}
+
+morpho <- import_plants_morpho() %>%
+  mutate(Species = gsub("_", " ", Species)) %>%
+  dplyr::select(where(is.numeric))
+
+morpho_long <- morpho %>%
+  pivot_longer(where(is.numeric),values_to = "value", names_to = "var")
+
+shapiro_results <- morpho_long %>%
+  group_by(var) %>%
+  summarise(
+    p_value = shapiro.test(value)$p.value
+  ) %>%
+  mutate(
+      signif = case_when(
+        p_value < 0.001 ~ "***",
+        p_value < 0.01  ~ "**",
+        p_value < 0.05  ~ "*",
+        TRUE ~ "")
+    )%>%
+  mutate(label = paste0(var,signif)) %>%
+  dplyr::select(var, label) %>%
+  deframe()
+
+ggplot(morpho_long, aes(x = value)) +
+  geom_histogram(bins = 30) +
+  facet_wrap(~ var, 
+             scales = "free", 
+             ncol = 4,
+             labeller = labeller(var = shapiro_results)) +
+  theme_bw() +
+  theme(strip.text = element_text(face="bold"))
+
+```
+
+### Annexe : Correlation of traits
+
+```{r}
+# Morpho
+  df <- import_plants_morpho() %>%
+    mutate(Species = gsub("_", " ", Species))%>%
+    dplyr::select(where(is.numeric))
+  
+  # CORRELATION
+  corr_mat <- cor(df, use = "pairwise.complete.obs")
+  
+  
+  # LONG FORMAT
+  corr_df <- as.data.frame(as.table(corr_mat))
+  colnames(corr_df) <- c("Var1", "Var2", "Correlation")
+  
+  # TRIANGLE (upper only)
+  corr_df <- corr_df %>%
+    mutate(
+      Var1 = factor(Var1),
+      Var2 = factor(Var2)
+    ) %>%
+    dplyr::filter(as.numeric(Var1) <= as.numeric(Var2))
+  
+  # GROUP COLORS
+  colors <- list(
+    forestgreen = c("Chlorophyll_content","Thickness","Toughness","Leaf_Area","SLA","C","N","13C","Ca","P","K"),
+    orange = c("Trunk_bark_thickness","Sapwood_WSG"),
+    brown = c("WSG","Diameter","SRL","Tissue_density","SRTA","branchiness")
+  )
+  
+  param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
+  
+  labels <- setNames(
+    paste0("<span style='color:", param_colors, ";'>", names(param_colors), "</span>"),
+    names(param_colors)
+  )
+  
+  # PLOT
+  ggplot(corr_df, aes(Var1, Var2, fill = Correlation)) +
+    
+    geom_tile(color = "white", size = 0.3) +
+    
+    # option valeurs (léger)
+    geom_text(aes(label = ifelse(abs(Correlation) > 0.5,
+                                 sprintf("%.2f", Correlation), "")),
+              size = 3,
+              color = "white",
+              fontface = "bold") +
+    
+    scale_fill_gradient2(
+      low = "#3B4CC0",
+      mid = "white",
+      high = "#B40426",
+      midpoint = 0,
+      limits = c(-1, 1)
+    ) +
+    
+    scale_x_discrete(labels = labels) +
+    scale_y_discrete(labels = labels) +
+    
+    coord_fixed() +
+    
+    theme_minimal(base_size = 13) +
+    
+    labs(
+      fill = expression("Pearson's " * italic(r))
+    ) +
+    
+    theme(
+      panel.grid = element_blank(),
+      
+      #axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
+      axis.text.y.left = element_markdown(face = "bold"),
+      
+      axis.title = element_blank(),
+      
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5),
+      
+      legend.position = "right",
+      
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank()
+    )
+```
 
 
 # III. DIVERSITY PATTERNS
@@ -1393,7 +1617,7 @@ wrap_plots(
 # IMPORT
 # --------------------------------------------------
 abiotic_red <- import_abiotic() %>%
-  dplyr::select(x,y,light,canop12,topo,wetness,Ca,Al,K,C,N) %>%
+  dplyr::select(x,y,wetness,Al,K,Ca,Na,Fe,C,N,light) %>%
   mutate(CNratio = C / N) %>%
   dplyr::select(-c(C,N,x,y))
 

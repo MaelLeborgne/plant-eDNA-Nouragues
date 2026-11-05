@@ -738,7 +738,7 @@ morpho_corr_matrix <- function(level, marker, model){
   
   # Join
   df <- inner_join(model_corr, morpho, by = level) %>%
-    dplyr::select(-Species, -Genus, -Family, -order, -subclass2, -subclass1)
+    dplyr::select(where(is.numeric))
   
   # CORRELATION
   corr_mat <- cor(df, use = "pairwise.complete.obs")
@@ -1257,7 +1257,8 @@ plot_grid <- function(grid, stems = FALSE) {
       axis.ticks = element_blank(),
       panel.grid = element_blank(),
       legend.position = "bottom",  # légende sous le plot
-      legend.margin = ggplot2::margin(t=-10)
+      legend.margin = ggplot2::margin(t=-10),
+      legend.text = element_text(size = 11)
     )
   
   # Ajouter les stems si demandé
@@ -1518,6 +1519,7 @@ mono_turbo_species <- function(grid, factor = 1) {
       panel.grid = element_blank(),
       legend.position = "bottom",  # légende sous le plot
       legend.margin = ggplot2::margin(t=-10),
+      legend.text = element_text(size = 11),
       plot.title = ggplot2::element_text(
         hjust = 0.5,   # centré
         size = 12,
