@@ -1,24 +1,39 @@
 
 # ===== plots.R =====
-# Regroup plot functions by Subject
+# Builds the figures of the report, grouped by subject.
+# Each function returns a ggplot object (or a patchwork of them).
 
 # ===== Libraries =====
-library(tidyverse) # Basic
-library(dplyr) # select, filter
-library(ggplot2) # Plot
-library(ggtext)
-library(ggpubr) # afficher correlation sur graph
-library(viridis) # turbo
-library(patchwork)
-library(akima)  # pour l'interpolation 2D
-library(emmeans)
-library(multcomp)
-library(randomForest)
+library(tidyverse)     # Data manipulation and ggplot2
+library(ggtext)        # Colored labels (element_markdown)
+library(ggpubr)        # Correlation displayed on a plot (stat_cor)
+library(viridis)       # Color palettes
+library(patchwork)     # Arrange plots
+library(akima)         # 2D interpolation
+library(emmeans)       # Adjusted means after the ANOVA
+library(multcomp)      # Letters of significance (cld)
+library(randomForest)  # Random forests
+library(ggVennDiagram) # Venn diagrams
+library(UpSetR)        # UpSet diagrams
 
+# Morphological traits by organ, the name of each group is its color in plots
+TRAIT_COLORS <- list(
+  forestgreen = c("Chlorophyll_content", "Thickness", "Toughness",
+                  "Leaf_Area", "SLA", "C", "N", "13C", "Ca", "P", "K"), # Leaves
+  orange = c("Trunk_bark_thickness", "Sapwood_WSG"),                    # Stems
+  brown = c("WSG", "Diameter", "SRL", "Tissue_density", "SRTA", "branchiness") # Roots
+)
 
 # ==== 1. TAXONOMY ====
 
-# -- function : take two tables and make plot log-log --
+#' Plot the reads against the basal area of the families (Figure 4)
+#'
+#' Each panel gives the Kendall tau, the p-value of the interaction with the
+#' percentage of trees in a linear model, and the number of families.
+#'
+#' @param df_H2 Data frame with Family, Basal_Area, tree (percentage of tree
+#'   species in the family), Reads and Marker.
+#' @return A ggplot with one panel per marker.
 plot_log_log <- function(df_H2){
 
   # Title labels
@@ -38,9 +53,7 @@ plot_log_log <- function(df_H2){
     dplyr::group_by(Marker) %>%
     dplyr::summarise(n = n(), .groups = "drop")
   
-  # Test Stat
-  library(broom)
-  # Model par facette
+  # Linear model with the tree interaction, for each marker
   model_df <- df_H2 %>%
     group_by(Marker) %>%
     tidyr::nest() %>%
@@ -50,7 +63,7 @@ plot_log_log <- function(df_H2){
         data = .x
       ))
     )
-  # Extraction des valeurs
+  # p-value of the interaction
   p_table <- model_df %>%
     mutate(
       anova = purrr::map(model, ~ car::Anova(.x, type = 2)),
@@ -102,36 +115,40 @@ plot_log_log <- function(df_H2){
     theme(strip.text.x = element_text(face = "bold",size=14, colour = "black"))
 }
 
+#' Plot the table of the relative richness by family (Figure S2)
+#'
+#' @param df_ab_rel Data frame with Clade, Metric (percentage) and Source.
+#' @return A ggplot table, percentages above 2% are in bold.
 ab_rel_tab <- function(df_ab_rel){
   
-  # Ordre des Sources
+  # Order of the sources
   df_ab_rel$Source <- factor(
     df_ab_rel$Source,
     levels = c("Ref","Bota","Sper01","ITS2","18S")
   )
   
-  # Ordre des Clades
+  # Order of the clades: by decreasing share in Bota
   order_bota <- df_ab_rel %>%
     filter(Source == "Bota") %>%
     arrange(desc(Metric)) %>%
     distinct(Clade) %>%
     pull(Clade)
   
-  # autres Clade (non présents dans Bota)
+  # Other clades (not in Bota)
   other_clade <- setdiff(unique(df_ab_rel$Clade), order_bota)
   
-  # combiner les deux
+  # Combine both
   order_clade <- c(order_bota, other_clade)
   
-  # Appliquer l'ordre
+  # Apply the order
   df_ab_rel$Clade <- factor(df_ab_rel$Clade, levels = rev(order_clade))
   
   # Clean data
   tab_clean <- df_ab_rel %>%
-    dplyr::filter(!is.na(Correlation)) %>%
+    dplyr::filter(!is.na(Metric)) %>%
     droplevels()
   
-  # Labels conditionels Y
+  # Y labels, bold above 2%
   labels_y <- tab_clean %>%
     group_by(Clade) %>%
     summarise(Metric = max(Metric), .groups = "drop") %>%
@@ -191,6 +208,14 @@ ab_rel_tab <- function(df_ab_rel){
     )
 }
 
+#' Compute the display order and the colors of the families (Figure 3)
+#'
+#' Families are grouped by the surveys that detect them, then sorted by their
+#' percentage of tree species.
+#'
+#' @param df_list List of 5 data frames in the order of family_richness_list().
+#' @return A data frame with one row per family: Clade, the presence flags
+#'   (in_bota, in_genet, in_both, in_ref), final_rank, Label and Color.
 fam_order_col <- function(df_list){
   
   ## Families share
@@ -213,7 +238,7 @@ fam_order_col <- function(df_list){
   ## Growth form
   growth_form <- growth_form_family(all_fam)
   
-  # Linéariser
+  # Long format
   growth_form_long <- growth_form %>%
     pivot_longer(
       cols = -c(family),
@@ -221,13 +246,13 @@ fam_order_col <- function(df_list){
       values_to = "Percent"
     )
   
-  # Extraire l'ordre par tree percent
+  # Order by percentage of trees
   tree_order <- growth_form_long %>%
     filter(growth_form == "tree") %>%
     arrange(desc(Percent)) %>%
     pull(family)
   
-  # ajouter familles sans tree
+  # Add the families without trees
   tree_order <- c(
     tree_order,
     setdiff(unique(growth_form_long$family), tree_order),
@@ -277,6 +302,12 @@ fam_order_col <- function(df_list){
   return(all_fam_df)
 }
 
+#' Plot the relative richness of the families in each survey (Figure 3a)
+#'
+#' @param df_plot Data frame with Clade, Metric, Source, and the columns of
+#'   fam_order_col().
+#' @param treshold_label Percentage above which a family is labelled.
+#' @return A ggplot of stacked bars.
 ab_rel_plot <- function(df_plot, treshold_label = 10){
   
   ### ORDER AND COLOR
@@ -357,6 +388,10 @@ ab_rel_plot <- function(df_plot, treshold_label = 10){
     geom_hline(yintercept = c(25,50,75), linetype = "dashed", color="white")
 }
 
+#' Plot the share of the growth forms in each survey (Figure 3b)
+#'
+#' @param df_plot Result of growth_form_source().
+#' @return A ggplot of stacked bars.
 growth_form_plot <- function(df_plot){
   
   ## SOURCES
@@ -364,15 +399,13 @@ growth_form_plot <- function(df_plot){
   df_plot <- df_plot %>%
     mutate(Source = factor(Source, levels = rev(c("REF","Bota","Sper01","ITS2","18S"))))
   
-  # Linéariser le dataframe
+  # Long format
   growth_form_long <- df_plot %>%
     pivot_longer(
       cols = c(terrestrial,  tree, treelet, liana, shrub,  vine, epilithic, parasite, hemi.epiphyte),
       names_to = "growth_form",
       values_to = "Percent"
     )
-  # Check 100%
-  # growth_form_long %>% group_by(Source) %>% summarise(Percent = sum(Percent))
   
   # Source labels color
   labels_source <- c(
@@ -436,44 +469,12 @@ growth_form_plot <- function(df_plot){
     geom_vline(xintercept = c(25,50,75), linetype = "dashed")
 }
 
-plot_bias_growth <- function(df_bias, ref_tab){
-  
-  # Order factors
-  ## inventory
-  df_bias$inventory <- factor(
-    df_bias$inventory,
-    levels = c("18S","ITS2","Sper01","BOTA")
-  )
-  ## growth form
-  df_bias$growth <- factor(
-    df_bias$growth,
-    levels = ref_tab$type
-  )
-  
-  # Plots
-  df_bias %>%
-    ggplot(aes(x = growth, y = inventory, fill = bias)) +
-    geom_tile() +
-    geom_text(aes(label = round(bias, 2)), size = 4) +
-    scale_fill_gradient2(
-      low = "blue",
-      mid = "white",
-      high = "red",
-      midpoint = 1,
-      limits = c(0, max(df_bias$bias, na.rm = TRUE))
-    ) +
-    theme_minimal() +
-    theme(
-      axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
-      axis.text.y.left = element_markdown(face = "bold"),
-    ) +
-    labs(x = "Growth form", y = "Inventory", fill = "Ratio (inv/ref)")
-}
+# ===== 2. SPATIAL PATTERNS AND TRAITS =====
 
-
-
-# ===== 2. SPATIAL PATTERNS =====
-
+#' Plot the correlation of the diversity patterns by radius (Figure 9)
+#'
+#' @param tab_rad Result of make_cor_table() with a column b.Radius.
+#' @return A ggplot with one panel per marker.
 plot_correlogramme <- function(tab_rad){
   
   # As Factors
@@ -483,11 +484,11 @@ plot_correlogramme <- function(tab_rad){
     levels = c("Sper01","ITS2","18S"))
   tab_rad$Level <- as.factor(tab_rad$Level)
   
-  # Median and quartiles
+  # Significance of the correlations
   tab <- tab_rad %>%
     filter(g.Marker %in% c("Sper01","ITS2")) %>%
     mutate(
-      p.value = ifelse(p.value <= 0.05, "p<=0.05", "p>0.5")
+      p.value = ifelse(p.value <= 0.05, "p<=0.05", "p>0.05")
     )
   
   # PLOT
@@ -497,8 +498,8 @@ plot_correlogramme <- function(tab_rad){
     geom_point(aes(shape = p.value), size = 2.5) +
     scale_shape_manual(
       values = c(
-        `p<=0.05` = 16,   # rond plein
-        `p>0.5` = 1 # rond creux
+        `p<=0.05` = 16, # Filled circle
+        `p>0.05` = 1    # Empty circle
       )
     )+
     labs(x = "Radius (m)", y = "Spearmans' r") +
@@ -510,75 +511,13 @@ plot_correlogramme <- function(tab_rad){
     theme(strip.text.x = element_text(face = "bold",size=14))
 }
 
-corr_tab_plot <- function(config_tab){
-  
-  # SET ORDER
-  config_tab$Metric_corr <- factor(
-    config_tab$Metric_corr,
-    levels = c("T+","T-","I.O","Count","EXP")
-  )
-  
-  config_tab$Level <- factor(
-    config_tab$Level,
-    levels = c("Family","Genus","Species")
-  )
-  
-  config_tab$Name <- factor(
-    config_tab$Name,
-    levels = rev(sort(unique(config_tab$Name)))
-  )
-  
-  config_tab$g.Marker <- factor(
-    config_tab$g.Marker,
-    levels = c("Sper01","ITS2","18S")
-  )
-  
-  # clean data
-  config_tab_clean <- df_ab_rel %>%
-    filter(!is.na(Correlation)) %>%
-    droplevels()
-  
-  # PLOT
-  ggplot(config_tab_clean,
-         aes(x = Metric_corr,
-             y = Name,
-             fill = Correlation)) +
-    
-    geom_tile(color = "grey90", linewidth = 0.3) +
-    
-    geom_text(aes(label = sprintf("%.2f", Correlation)),
-              size = 3) +
-    
-    facet_grid(Level ~ g.Marker,
-               scales = "free",
-               space = "free",
-               switch = "y",
-               drop = TRUE) +
-    
-    scale_x_discrete(position = "top") +
-    
-    scale_fill_gradient2(
-      low = "#3B4CC0",
-      mid = "white",
-      high = "#B40426",
-      midpoint = 0,
-      limits = c(-1, 1),
-      na.value = "white"
-    ) +
-    
-    theme_minimal(base_size = 11) +
-    
-    theme(
-      panel.grid = element_blank(),
-      axis.title = element_blank(),
-      
-      strip.background = element_blank(),
-      strip.placement = "outside",
-      strip.text.x = element_text(size = 10, face = "bold"),
-      strip.text.y = element_text(size = 10, face = "bold")
-    )
-}
-
+#' Plot the correlations between botanical and eDNA patterns (Figure 7)
+#'
+#' Letters come from pairwise comparisons of the levels after a three-way ANOVA
+#' (level, method, marker), with a threshold of 0.1.
+#'
+#' @param config_tab Result of make_cor_table().
+#' @return A ggplot of violins with one panel per marker and level.
 corr_violin_plot <- function(config_tab){
   
   config_tab <- config_tab %>%
@@ -587,7 +526,7 @@ corr_violin_plot <- function(config_tab){
   # Metric
   config_tab$Metric_corr <- factor(
     config_tab$Metric_corr,
-    levels = c("EXP","HYP","Count","T+","T-","I.O")
+    levels = c("EXP","HYP","Count","I.O")
   )
   
   # Level
@@ -607,18 +546,18 @@ corr_violin_plot <- function(config_tab){
     filter(!is.na(Correlation)) %>%
     droplevels()
   
-  # Test stat global
+  # Three-way ANOVA
   res_aov3 <- aov(Correlation ~ Level * Metric_corr * g.Marker, 
                   data = config_tab_clean)
   
-  # Moyennes ajusté par Level
+  # Adjusted means by level
   emm3 <- emmeans(res_aov3, ~ Level | Metric_corr * g.Marker)
   
-  # Lettre de significativités
+  # Letters of significance
   cld3 <- cld(emm3, Letters = letters, alpha = 0.1) # p-value 0.1
   cld_df3 <- as.data.frame(cld3)
   
-  # Position des étiquettes
+  # Position of the letters
   cld_df3 <- cld_df3 %>%
     left_join(
       config_tab %>%
@@ -629,46 +568,42 @@ corr_violin_plot <- function(config_tab){
       by = c("Metric_corr", "g.Marker", "Level")
     )
   
-  # Nombre de points
+  # Number of points
   n_df <- config_tab_clean %>%
     group_by(Metric_corr, g.Marker, Level) %>%
     summarise(n = n(), .groups = "drop")
   
   n_df <- n_df %>%
-    mutate(pos = 0.85)  # légèrement à droite de ta limite max (1)
+    mutate(pos = 0.85)
   
   # PLOT
   ggplot(config_tab_clean,
          aes(x = Correlation,
              y = Metric_corr)) +
     
-    # boxplot
+    # violins
     geom_violin(
       width = 0.8,
-      #outlier.size = 1.5,
       fill = "grey80",
       color = "black"
     ) +
     
-    # points (optionnel mais recommandé)
+    # points
     geom_jitter(
       width = 0.15,
       size = 1,
       alpha = 0.5
     ) +
     
-    # facettes = structure tableau
+    # facets
     facet_grid(g.Marker ~ Level,
                scales = "free_x",
                space = "free_x",
                switch = "y",
                drop = TRUE) +
     
-    # axe en haut (tableau)
-    scale_x_continuous(position = "top") +
-    
     geom_text(data = cld_df3,
-              aes(x = pos - 0.05,   # position sur axe x
+              aes(x = pos - 0.05,
                   y = Metric_corr,
                   label = .group),
               inherit.aes = FALSE,
@@ -692,22 +627,15 @@ corr_violin_plot <- function(config_tab){
     ) + 
     scale_x_continuous(
       breaks = seq(0, 1, 0.2),
-      limits = c(-0.15, 1.1)  # ← important
+      limits = c(-0.15, 1.1)
     )+
-    # theme_bw() +
-    # theme(
-    #   strip.text.x = element_text(face = "bold",size=14),
-    #   strip.text.y = element_text(face = "bold",size=14)
-    #   )
-    
     theme(
       panel.grid = element_blank(),
-      #axis.title = element_blank(),
       axis.title.y = element_blank(),
       axis.title.x.bottom = element_text(size=13),
-      axis.line = element_line(color = "gray"),  # Lignes des axes en noir
-      axis.text = element_text(color = "black"),  # Texte des axes en noir
-      axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
+      axis.line = element_line(color = "gray"),
+      axis.text = element_text(color = "black"),
+      axis.ticks = element_line(color = "black"),
 
       # strips
       strip.background = element_blank(),
@@ -722,191 +650,21 @@ corr_violin_plot <- function(config_tab){
     )
 }
 
-morpho_corr_matrix <- function(level, marker, model){
-  
-  # Morpho
-  morpho <- import_plants_morpho() %>%
-    mutate(Species = gsub("_", " ", Species))
-  
-  # Correlations
-  model_corr <- tab_rar %>%
-    filter(Level == level,
-           g.Marker == marker,
-           Metric_corr == model) %>%
-    dplyr::select(Name, Correlation) %>%
-    rename(Species = Name, EXP = Correlation)
-  
-  # Join
-  df <- inner_join(model_corr, morpho, by = level) %>%
-    dplyr::select(where(is.numeric))
-  
-  # CORRELATION
-  corr_mat <- cor(df, use = "pairwise.complete.obs")
-  
-  # Ordre basé sur Model
-  order_vars <- names(sort(corr_mat[model, ], decreasing = TRUE))
-  order_vars <- c(model, setdiff(order_vars, model))
-  
-  # LONG FORMAT
-  corr_df <- as.data.frame(as.table(corr_mat))
-  colnames(corr_df) <- c("Var1", "Var2", "Correlation")
-  
-  # TRIANGLE (upper only)
-  corr_df <- corr_df %>%
-    mutate(
-      Var1 = factor(Var1, levels = order_vars),
-      Var2 = factor(Var2, levels = order_vars)
-    ) %>%
-    dplyr::filter(as.numeric(Var1) <= as.numeric(Var2))
-  
-  # GROUP COLORS
-  colors <- list(
-    forestgreen = c("Chlorophyll_content","Thickness","Toughness","Leaf_Area","SLA","C","N","13C","Ca","P","K"),
-    orange = c("Trunk_bark_thickness","Sapwood_WSG"),
-    brown = c("WSG","Diameter","SRL","Tissue_density","SRTA","branchiness"),
-    black = c(model)
-  )
-  
-  param_colors <- setNames(rep(names(colors), lengths(colors)), unlist(colors))
-  
-  labels <- setNames(
-    paste0("<span style='color:", param_colors, ";'>", names(param_colors), "</span>"),
-    names(param_colors)
-  )
-  
-  # PLOT
-  ggplot(corr_df, aes(Var1, Var2, fill = Correlation)) +
-    
-    geom_tile(color = "white", size = 0.3) +
-    
-    # option valeurs (léger)
-    geom_text(aes(label = ifelse(abs(Correlation) > 0.5,
-                                 sprintf("%.2f", Correlation), "")),
-              size = 3,
-              color = "white",
-              fontface = "bold") +
-    
-    scale_fill_gradient2(
-      low = "#3B4CC0",
-      mid = "white",
-      high = "#B40426",
-      midpoint = 0,
-      limits = c(-1, 1)
-    ) +
-    
-    scale_x_discrete(labels = labels) +
-    scale_y_discrete(labels = labels) +
-    
-    coord_fixed() +
-    
-    theme_minimal(base_size = 13) +
-    
-    labs(
-      fill = expression("Pearson's " * italic(r))
-    ) +
-    
-    theme(
-      panel.grid = element_blank(),
-      
-      #axis.text.x.bottom = element_markdown(angle = 45, hjust = 1, face = "bold"),
-      axis.text.y.left = element_markdown(face = "bold"),
-      
-      axis.title = element_blank(),
-      
-      plot.title = element_text(face = "bold", hjust = 0.5),
-      plot.subtitle = element_text(hjust = 0.5),
-      
-      legend.position = "right",
-      
-      axis.text.x = element_blank(),
-      axis.ticks.x = element_blank()
-    )
-}
-
-morpho_corr_bar <- function(marker = "Sper01", level = "Species", metric = "HYP") {
-  
-  # Import Morpho
-  morpho <- import_plants_morpho() %>%
-    mutate(Species = gsub("_", " ", Species))
-  
-  # Aggregate traits by level
-  morpho_agg <- aggregate_morpho(morpho, level, median)
-  
-  # Read Model
-  model <- tab_rar %>%
-    dplyr::filter(
-      Level == level,
-      g.Marker == marker,
-      Metric_corr == metric
-    ) %>%
-    dplyr::select(Name, Correlation) %>%
-    rename(!!level := Name, Model = Correlation)
-  
-  # Inner Join
-  model_morpho_df <- inner_join(model, morpho_agg, by = level) %>%
-    dplyr::select(-!!level, -n)
-  
-  # Correlation
-  corr_vec <- cor(model_morpho_df, use = "pairwise.complete.obs")[, "Model"]
-  
-  corr_df <- data.frame(
-    Variable = names(corr_vec),
-    Correlation = corr_vec
-  ) %>%
-    dplyr::filter(Variable != "Model") %>%
-    arrange(Correlation)
-  
-  # Colors
-  colors <- list(
-    forestgreen = c("Chlorophyll_content", "Thickness", "Toughness",
-                    "Leaf_Area", "SLA", "C", "N", "13C", "Ca", "P", "K"),
-    orange = c("Trunk_bark_thickness", "Sapwood_WSG"),
-    brown = c("WSG", "Diameter", "SRL", "Tissue_density", "SRTA", "branchiness")
-  )
-  
-  param_colors <- setNames(
-    rep(names(colors), lengths(colors)),
-    unlist(colors)
-  )
-  
-  labels_source <- setNames(
-    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
-    names(param_colors)
-  )
-  
-  # Plot
-  ggplot(corr_df, aes(
-    x = reorder(Variable, Correlation),
-    y = Correlation,
-    fill = Correlation
-  )) +
-    geom_col() +
-    coord_flip() +
-    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    theme_minimal(base_size = 14) +
-    labs(
-      title = paste0(level),
-      x = "",
-      y = "Pearson r",
-      fill = "r"
-    ) +
-    scale_x_discrete(labels = labels_source) +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),
-      plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12),
-      axis.text.y.left = ggtext::element_markdown(hjust = 1, face = "bold")
-    )
-}
-
-morpho_corr_df <- function(marker = "Sper01", level = "Species", metric = "HYP", corr) {
+#' Correlate the eDNA-botanical correlations with the morphological traits
+#'
+#' @param df_corr Result of make_cor_table().
+#' @param marker,level,metric Selection of the rows of df_corr.
+#' @param corr Method of cor.test(), for example "pearson".
+#' @return A data frame with Variable (trait), Correlation, p.value, signif
+#'   (stars) and Level.
+morpho_corr_df <- function(df_corr, marker = "Sper01", level = "Species", metric = "HYP", corr) {
   
   morpho <- import_plants_morpho() %>%
     mutate(Species = gsub("_", " ", Species))
   
   morpho_agg <- aggregate_morpho(morpho, level, median)
   
-  model <- df_H3 %>%
+  model <- df_corr %>%
     dplyr::filter(
       Level == level,
       g.Marker == marker,
@@ -952,29 +710,20 @@ morpho_corr_df <- function(marker = "Sper01", level = "Species", metric = "HYP",
   return(res_df)
 }
 
-morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP", Corr){
+#' Plot the correlations with the morphological traits by level (Figure 8)
+#'
+#' @param df_corr Result of make_cor_table().
+#' @param Marker,Metric Selection of the rows of df_corr.
+#' @param Corr Method of cor.test(), for example "pearson".
+#' @return A ggplot of bars with one panel per taxonomic level.
+morpho_corr_bar_strip <- function(df_corr, Marker = "Sper01", Metric = "HYP", Corr){
   
   levels <- c("Family", "Genus", "Species")
   
-  corr_all <- map_dfr(levels, ~ morpho_corr_df(level = .x, marker = Marker, metric = Metric, corr = Corr))
+  corr_all <- map_dfr(levels, ~ morpho_corr_df(df_corr, level = .x, marker = Marker, metric = Metric, corr = Corr))
   
   # Colors
-  colors <- list(
-    forestgreen = c("Chlorophyll_content", "Thickness", "Toughness",
-                    "Leaf_Area", "SLA", "C", "N", "13C", "Ca", "P", "K"),
-    orange = c("Trunk_bark_thickness", "Sapwood_WSG"),
-    brown = c("WSG", "Diameter", "SRL", "Tissue_density", "SRTA", "branchiness")
-  )
-  
-  param_colors <- setNames(
-    rep(names(colors), lengths(colors)),
-    unlist(colors)
-  )
-  
-  labels_source <- setNames(
-    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
-    names(param_colors)
-  )
+  labels_source <- trait_labels()
   
   # Reorder
   family_order <- corr_all %>%
@@ -988,11 +737,7 @@ morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP", Corr){
     )
   
   # Labels
-  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData")
-  tab_rar <- tab_rar %>%
-    dplyr::select(g.Marker, Level, Metric_corr, Name, Correlation)
-  
-  n_df <- tab_rar %>%
+  n_df <- df_corr %>%
     group_by(Metric_corr, g.Marker, Level) %>%
     summarise(n = n(), .groups = "drop") %>%
     dplyr::filter(g.Marker == Marker, Metric_corr == Metric) %>%
@@ -1025,9 +770,9 @@ morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP", Corr){
 
       axis.title.y = element_blank(),
       axis.title.x.bottom = element_text(size=13),
-      axis.line = element_line(color = "gray"),  # Lignes des axes en noir
-      axis.text = element_text(color = "black"),  # Texte des axes en noir
-      axis.ticks = element_line(color = "black"),  # Ticks des axes en noir
+      axis.line = element_line(color = "gray"),
+      axis.text = element_text(color = "black"),
+      axis.ticks = element_line(color = "black"),
       
       # strips
       strip.background = element_blank(),
@@ -1053,45 +798,169 @@ morpho_corr_bar_strip <- function(Marker = "Sper01", Metric = "HYP", Corr){
     )
 }
 
+#' Build the colored labels of the morphological traits
+#'
+#' @return A named vector of HTML labels, for ggtext::element_markdown().
+trait_labels <- function(){
+  
+  param_colors <- setNames(
+    rep(names(TRAIT_COLORS), lengths(TRAIT_COLORS)),
+    unlist(TRAIT_COLORS)
+  )
+  
+  setNames(
+    paste0("<span style='color:", param_colors, ";'> ", names(param_colors), " </span>"),
+    names(param_colors)
+  )
+}
+
+#' Plot the Venn diagrams of the taxa shared between surveys (Figure 2)
+#'
+#' @param list_by_level List of taxa: list_by_level[[Level]][[Survey]].
+#' @return A patchwork with one Venn diagram per taxonomic level.
+plot_venn_levels <- function(list_by_level){
+  
+  plot_list <- lapply(names(list_by_level), function(lvl){
+    
+    col <- switch(lvl,
+                  "Family"  = "darkorange",
+                  "Genus"   = "steelblue",
+                  "Species" = "forestgreen")
+    
+    ggVennDiagram(list_by_level[[lvl]]) +
+      scale_fill_gradient(low = "white", high = col) +
+      ggtitle(lvl) +
+      guides(fill = guide_legend(
+        override.aes = list(size = 10)
+      )) +
+      theme(
+        plot.title = element_text(face = "bold", size = 15),
+        legend.position = "none"
+      )
+  })
+  
+  wrap_plots(plot_list, ncol = 3)
+}
+
+#' Plot the UpSet diagram of the taxa shared between surveys (Figure S1)
+#'
+#' @param tax_list List of taxa of each survey, at one taxonomic level.
+#' @param level Name of the level, used in the axis title.
+#' @param size_max Upper limit of the axis of the set sizes.
+#' @return An UpSetR plot.
+plot_upset_level <- function(tax_list, level, size_max){
+  
+  data_upset <- fromList(tax_list)
+  
+  upset(data_upset,
+        nsets = ncol(data_upset),
+        order.by = "freq",
+        show.numbers = "yes",
+        set_size.show = TRUE,
+        main.bar.color = "steelblue",
+        sets.bar.color = "gray",
+        mainbar.y.label = paste("Intersections -", level),
+        sets.x.label = "Set Size",
+        set_size.scale_max = size_max)
+}
+
+#' Plot the distribution of the morphological traits (Figure S3)
+#'
+#' The stars after the name of a trait give the significance of the Shapiro
+#' normality test.
+#'
+#' @param morpho Traits of the species, see import_plants_morpho().
+#' @return A ggplot with one histogram per trait.
+plot_trait_distribution <- function(morpho){
+  
+  morpho_long <- morpho %>%
+    dplyr::select(where(is.numeric)) %>%
+    pivot_longer(where(is.numeric), values_to = "value", names_to = "var")
+  
+  # Shapiro test on each trait
+  shapiro_results <- morpho_long %>%
+    group_by(var) %>%
+    summarise(
+      p_value = shapiro.test(value)$p.value
+    ) %>%
+    mutate(
+      signif = case_when(
+        p_value < 0.001 ~ "***",
+        p_value < 0.01  ~ "**",
+        p_value < 0.05  ~ "*",
+        TRUE ~ "")
+    ) %>%
+    mutate(label = paste0(var, signif)) %>%
+    dplyr::select(var, label) %>%
+    deframe()
+  
+  ggplot(morpho_long, aes(x = value)) +
+    geom_histogram(bins = 30) +
+    facet_wrap(~ var,
+               scales = "free",
+               ncol = 4,
+               labeller = labeller(var = shapiro_results)) +
+    theme_bw() +
+    theme(strip.text = element_text(face = "bold"))
+}
+
+#' Plot the upper triangle of a correlation matrix (Figures S4 and S5)
+#'
+#' @param corr_mat Square correlation matrix.
+#' @param threshold The values are displayed when their absolute value is above.
+#' @param y_labels Labels of the variables on the y axis, or waiver() for names.
+#' @param fill_label Title of the color legend.
+#' @return A ggplot.
+plot_corr_triangle <- function(corr_mat, threshold, y_labels = waiver(),
+                               fill_label = expression("Pearson's " * italic(r))){
+  
+  # Long format
+  corr_df <- as.data.frame(as.table(corr_mat))
+  colnames(corr_df) <- c("Var1", "Var2", "Correlation")
+  
+  # Triangle (upper only)
+  corr_df <- corr_df %>%
+    dplyr::filter(as.numeric(Var1) <= as.numeric(Var2))
+  
+  ggplot(corr_df, aes(Var1, Var2, fill = Correlation)) +
+    geom_tile(color = "white", linewidth = 0.3) +
+    geom_text(aes(label = ifelse(abs(Correlation) > threshold,
+                                 sprintf("%.2f", Correlation), "")),
+              size = 3,
+              color = "white",
+              fontface = "bold") +
+    scale_fill_gradient2(
+      low = "#3B4CC0",
+      mid = "white",
+      high = "#B40426",
+      midpoint = 0,
+      limits = c(-1, 1)
+    ) +
+    scale_y_discrete(labels = y_labels) +
+    coord_fixed() +
+    theme_minimal(base_size = 13) +
+    labs(
+      fill = fill_label
+    ) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.y.left = element_markdown(face = "bold"),
+      axis.title = element_blank(),
+      legend.position = "right",
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank()
+    )
+}
+
 # ==== 3. DIVERSITY PATTERNS ====
 
-# Random forest function
-# rand_for_IncMSE <- function(data_pixel){
-#   
-#   set.seed(123) # For reproductibility
-#   
-#   rf_model <- randomForest(
-#     Metric ~ .,              # toutes les variables explicatives
-#     data = data_pixel %>% dplyr::select(-x, -y, -sample_loc),  # enlever coordonnées si non pertinentes
-#     ntree = 500,
-#     importance = TRUE
-#   )
-#   
-#   # # importance des variables
-#   # importance(rf_model)
-#   # varImpPlot(rf_model)
-#   
-#   # Plot
-#   var_imp <- as.data.frame(importance(rf_model))
-#   var_imp$Variable <- rownames(var_imp)
-#   
-#   p <- ggplot(var_imp, aes(x = reorder(Variable, `%IncMSE`), y = `%IncMSE`)) +
-#     geom_col(fill = "grey") +
-#     coord_flip() +
-#     theme_light() +
-#     #scale_y_continuous(limits = c(0, 20)) + # Homogène scaling
-#     theme(
-#       plot.title = element_text(hjust = 0,size = 14, face="bold"),
-#       axis.text.y.left = element_text(face="bold")
-#     )
-#   
-#   return(list(p, rf_model, data_pixel))
-# }
-
+#' Estimate the importance of the variables with repeated random forests
+#'
+#' @param data_pixel Data frame with Metric (response variable), x, y,
+#'   sample_loc (not used by the model) and the explanatory variables.
+#' @param nrep Number of random forests, each one has 500 trees.
+#' @return A long data frame with Variable, replicate and importance (%IncMSE).
 rand_for_IncMSE_rep <- function(data_pixel, nrep = 100){
-  
-  library(randomForest)
-  library(dplyr)
   
   results <- replicate(nrep, {
     
@@ -1106,7 +975,7 @@ rand_for_IncMSE_rep <- function(data_pixel, nrep = 100){
     
   }, simplify = "matrix")
   
-  # mise en dataframe long
+  # Long format
   df_imp <- as.data.frame(results)
   df_imp$Variable <- rownames(df_imp)
   
@@ -1118,25 +987,18 @@ rand_for_IncMSE_rep <- function(data_pixel, nrep = 100){
   return(df_long)
 }
 
-
-
-# --- Accumulated Local Effects ---
-plot_res_by_features <- function(res, features){
-  
-  library(iml)
-  
-  plot_list <- lapply(features, function(f){
-    predictor <- Predictor$new(res[[2]], data = res[[3]], y = res[[3]]$Metric)
-    ale <- FeatureEffect$new(predictor, feature = f, method = "ale")
-    plot(ale)
-  })
-  
-  return(plot_list)
-}
-
+#' Plot the importance of the variables in the diversity patterns (Figure 11)
+#'
+#' Importances are normalized within each random forest. Letters come from
+#' Dunn tests between patterns for each variable (BH correction, p < 0.05).
+#'
+#' @param df_plot Results of rand_for_IncMSE_rep(), with a column pattern.
+#' @return A ggplot of boxplots with one panel per variable.
 plot_RF_stat <- function(df_plot){
   
   # Ordering
+  df_plot$Variable <- recode(df_plot$Variable, "CNratio" = "C:N")
+  
   df_plot$pattern <- factor(
     df_plot$pattern,
     levels = c("Bota","ITS2","Sper01")
@@ -1147,7 +1009,7 @@ plot_RF_stat <- function(df_plot){
     levels = c("Al","Ca","Fe","C:N","K","Na","light","wetness")
   )
   
-  # Noramliser
+  # Normalize the importance within each random forest
   df_plot <- df_plot %>%
     group_by(pattern, replicate) %>%
     mutate(
@@ -1155,7 +1017,7 @@ plot_RF_stat <- function(df_plot){
     ) %>%
     ungroup()
   
-  # Test et lettres
+  # Tests and letters
   letters_df <- df_plot %>%
     group_by(Variable) %>%
     do({
@@ -1178,6 +1040,7 @@ plot_RF_stat <- function(df_plot){
     }) %>%
     ungroup() %>%
     dplyr::rename(pattern = Group) %>%
+    # cldList() removes the zeros from the names of the groups
     mutate(pattern = recode(pattern,
                             "Sper1" = "Sper01"))
   
@@ -1187,7 +1050,7 @@ plot_RF_stat <- function(df_plot){
     facet_wrap(~Variable, scales = "fixed") +
     geom_text(
       data = letters_df,
-      aes(x = pattern, y = Inf, label = MonoLetter),  # position ajustable
+      aes(x = pattern, y = Inf, label = MonoLetter),
       inherit.aes = FALSE,
       vjust = 1.5,
       size = 5,
@@ -1203,37 +1066,21 @@ plot_RF_stat <- function(df_plot){
     labs(y="Relative importance (%)")
 }
 
-# ==== < Basic > ====
+# ==== Maps ====
 
-# Return the map of stems
-plot_bota <- function(Level){
-  
-  # Configuration
-  config <- list(Year=2012)
-  bota <- import_bota(config)
-  
-  # Create plot
-  p <- ggplot(bota, aes(x = Xfield, y = Yfield)) +
-    geom_point(
-      aes(color = .data[[Level]], size = CircCorr),
-      shape = 21,       # Cercle (21–25 permettent un remplissage)
-      fill = NA,        # Creux (pas de remplissage)
-      stroke = 1        # Épaisseur du contour
-    ) +
-    theme_minimal() +
-    coord_fixed() +
-    theme(legend.position = "none")
-  
-  return(p)
-}
-
+#' Plot a grid as a heatmap (Figure 6)
+#'
+#' @param grid Grid, see grid_read().
+#' @param stems If TRUE, add the stems of the taxon of the grid (2012 inventory)
+#'   as white circles proportional to their circumference.
+#' @return A ggplot.
 plot_grid <- function(grid, stems = FALSE) {
   
   # Configuration
   df <- grid$df
   C <- grid$config
   
-  # Création du ggplot de base
+  # Base plot
   p <- ggplot(df, aes(x = x, y = y)) +
     geom_tile(aes(fill = Metric)) +
     coord_fixed() +
@@ -1249,20 +1096,19 @@ plot_grid <- function(grid, stems = FALSE) {
     ) +
     theme(
       plot.title = element_text(
-        hjust = 0.5,   # centre horizontalement
-        face = "bold"  # texte en gras
+        hjust = 0.5,
+        face = "bold"
       ),
       axis.title = element_blank(),
       axis.text = element_blank(),
       axis.ticks = element_blank(),
       panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
+      legend.position = "bottom",
       legend.margin = ggplot2::margin(t=-10),
       legend.text = element_text(size = 11)
     )
   
-  # Ajouter les stems si demandé
-  
+  # Add the stems if requested
   if(stems) {
     bota_focus <- import_bota(list("Year" = "2012")) %>%
       dplyr::filter(.data[[C$Level]] == C$Name)
@@ -1270,8 +1116,8 @@ plot_grid <- function(grid, stems = FALSE) {
       geom_point(
         data = bota_focus,
         aes(x = Xfield, y = Yfield, size = CircCorr/10),
-        shape = 21,   # cercle avec contour
-        fill = NA,    # pas de remplissage
+        shape = 21,   # Empty circle
+        fill = NA,
         colour = "white",
         stroke = 0.5
       ) +
@@ -1288,27 +1134,18 @@ plot_grid <- function(grid, stems = FALSE) {
   return(p)
 }
 
-# Give a list of plot from a list of grid
-grids_to_plots <- function(grid_list, stems = FALSE){
-  
-  plot_list <- lapply(seq_along(grid_list), function(i){
-    plot_grid(grid_list[[i]], stems) +
-      labs(title = names(grid_list)[i])
-  })
-  
-  return(plot_list)
-}
-
-# ==== < Patch > ====
-
-# Fonction d'interpolation 2D
-interpolate_grid_2D <- function(grid = genet_grid_read(), factor = 3) {
+#' Interpolate a grid on a finer grid with bicubic splines
+#'
+#' @param grid Grid, see grid_read().
+#' @param factor Number of new cells per cell of the grid, in each direction.
+#' @return A data frame with x, y and krig (interpolated value, at least 0).
+interpolate_grid_2D <- function(grid, factor = 3) {
   
   # Configuration
   G <- grid
   df <- G$df
   
-  # 1 Grille fine
+  # 1 Fine grid
   dx <- min(diff(sort(unique(df$x)))) / factor
   dy <- min(diff(sort(unique(df$y)))) / factor
   x_fine <- seq(min(df$x), max(df$x), by = dx)
@@ -1321,180 +1158,52 @@ interpolate_grid_2D <- function(grid = genet_grid_read(), factor = 3) {
     z = df$Metric,
     xo = x_fine,
     yo = y_fine,
-    linear = FALSE, # spline bicubique
+    linear = FALSE, # Bicubic spline
     extrap = TRUE
   )
   
-  # 3 Transformer en data.frame pour ggplot
+  # 3 Data frame for ggplot
   interp_df <- expand.grid(x = interp_res$x, y = interp_res$y)
   interp_df$krig <- as.vector(interp_res$z)
   
-  # 4 Tronquer à 0
+  # 4 Truncate to 0
   interp_df$krig <- pmax(as.vector(interp_res$z), 0)
   
   return(interp_df)
 }
 
-# Plot interpolate grid
-plot_grid_interp <- function(grid, factor = 2) {
-  
-  fine <- interpolate_grid_2D(grid, factor)
-  
-  # Valeurs limites pour positionner l'échelle
-  x_min <- min(fine$x)
-  x_max <- max(fine$x)
-  y_min <- min(fine$y)
-  y_max <- max(fine$y)
-  
-  n <- 256
-  
-  ggplot(fine, aes(x = x, y = y, fill = krig)) +
-    geom_tile() +
-    scale_fill_gradientn(
-      colours = turbo(n, alpha = 1, begin = 0, end = 1, direction = 1)
-    ) +
-    coord_fixed() +
-    theme_minimal()+
-    
-    # supprimer axes et ticks
-    theme(
-      axis.title = element_blank(),
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
-      legend.margin = ggplot2::margin(t = -10),
-      plot.caption = element_text(
-        hjust = 0.5,   # centré
-        size = 12
-      ),
-      plot.margin = ggplot2::margin(0, 20, 0, 20)
-    ) +
-    
-    # légende horizontale sans titre
-    guides(
-      fill = guide_colorbar(
-        title = NULL, 
-        direction = "horizontal",
-        barwidth = unit(6, "lines"),  # "npc" = 1 fois la largeur du panel
-        barheight = unit(0.5, "lines")  # hauteur de la barre
-      )
-    )+
-    
-    # ligne d'échelle horizontale (50 unités)
-    geom_segment(
-      aes(
-        x = x_min + 20,
-        xend = x_min + 20 + 50,
-        y = y_max - 0.05 * (y_max - y_min),
-        yend = y_max - 0.05 * (y_max - y_min)
-      ),
-      color = "white",
-      size = 0.7
-    ) +
-    
-    # label "50 m"
-    annotate(
-      "text",
-      x = x_min + 20 + 25,  # au milieu de la ligne
-      y = y_max - 0.08 * (y_max - y_min),
-      label = "50 m",
-      hjust = 0.5,
-      vjust = 1,
-      size = 3,
-      color = "white"
-    )+
-    # ajouter nom de la famille centré en bas
-    labs(caption = grid$config$Name)
-}
-
-# Fonction de plot  with soft theme
+#' Plot an interpolated grid with axes (Figure 10)
+#'
+#' @param grid Grid, see grid_read().
+#' @param factor See interpolate_grid_2D().
+#' @return A ggplot.
 plot_grid_interp_soft <- function(grid, factor = 1) {
   
   fine <- interpolate_grid_2D(grid, factor)
-  
-  # Valeurs limites pour positionner l'échelle
-  x_min <- min(fine$x)
-  x_max <- max(fine$x)
-  y_min <- min(fine$y)
-  y_max <- max(fine$y)
-  
-  n <- 256
   
   ggplot(fine, aes(x = x, y = y, fill = krig)) +
     geom_tile() +
     scale_fill_gradientn(
       colours = turbo(100)
-      #limits = c(0, 30) # Homogene scaling color
     ) +
     coord_fixed() +
     theme_light()+
-    #theme_void()+
     theme(
       legend.margin = ggplot2::margin(t = -10),
       plot.title = element_text(hjust = 0,size = 14, face="bold")
-      #plot.margin = ggplot2::margin(0, 20, 0, 20)
     )
 }
 
-patch_turbo_family <- function(factor = 1){
-  
-  # Configuration
-  basic_config <- list(
-    Type = "genet",
-    Rar = FALSE,
-    Marker = "Sper01",
-    Metric = "OTU",
-    Level = "Family"
-  )
-  
-  # 13 familles les plus abondante (>1%, voir graph plot_tab_familly_multi())
-  familles <- c("Fabaceae","Sapotaceae","Lecythidaceae","Moraceae","Chrysobalanaceae","Annonaceae","Putranjivaceae","Meliaceae","Apocynaceae","Malvaceae","Urticaceae","Euphorbiaceae","Sapindaceae")
-  
-  plots <- list()
-  
-  for(i in seq_along(familles)) {
-    
-    # Configuration
-    fam <- familles[i]
-    config <- basic_config
-    config$Name <- familles[i]
-    
-    # Test
-    print(config$Name)
-    
-    # Read grid
-    grid <- grid_read(config)
-    
-    # générer la heatmap
-    p <- plot_grid_interp(grid, factor = factor)
-    
-    # ajouter indice en haut à gauche
-    p <- p +
-      annotate(
-        "text",
-        x = min(grid$df$x),
-        y = max(grid$df$y + 60),
-        label = paste0("(", i, ")"),
-        fontface = "bold",
-        hjust = 0,
-        vjust = 1,
-        size = 5,
-        color = "black"
-      )
-    
-    plots[[i]] <- p
-  }
-  
-  # assembler les plots en patchwork
-  patchwork::wrap_plots(plots, ncol = 4)
-}
-
+#' Plot an interpolated grid without axes, with a scale bar (Figure 5)
+#'
+#' @param grid Grid, see grid_read().
+#' @param factor See interpolate_grid_2D().
+#' @return A ggplot titled with the name of the taxon.
 mono_turbo_species <- function(grid, factor = 1) {
   
   fine <- interpolate_grid_2D(grid, factor)
   
-  # Valeurs limites pour positionner l'échelle
+  # Limits to place the scale bar
   x_min <- min(fine$x)
   x_max <- max(fine$x)
   y_min <- min(fine$y)
@@ -1511,39 +1220,39 @@ mono_turbo_species <- function(grid, factor = 1) {
     coord_fixed() +
     theme_minimal()+
     
-    # supprimer axes et ticks
+    # Remove axes and ticks
     theme(
       axis.title = element_blank(),
       axis.text = element_blank(),
       axis.ticks = element_blank(),
       panel.grid = element_blank(),
-      legend.position = "bottom",  # légende sous le plot
+      legend.position = "bottom",
       legend.margin = ggplot2::margin(t=-10),
       legend.text = element_text(size = 11),
       plot.title = ggplot2::element_text(
-        hjust = 0.5,   # centré
+        hjust = 0.5,
         size = 12,
         face = "bold.italic"
       ),
       plot.caption = ggplot2::element_text(
-        hjust = 0.5,   # centré
+        hjust = 0.5,
         size = 11,
         face = "bold"
       ),
       plot.margin = ggplot2::margin(0, 20, 0, 20)
     ) +
     
-    # légende horizontale sans titre
+    # Horizontal legend without title
     guides(
       fill = guide_colorbar(
         title = NULL, 
         direction = "horizontal",
-        barwidth = unit(4, "lines"),  # "npc" = 1 fois la largeur du panel
-        barheight = unit(0.5, "lines")  # hauteur de la barre
+        barwidth = unit(4, "lines"),
+        barheight = unit(0.5, "lines")
       )
     ) +
     
-    # ligne d'échelle horizontale (50 unités)
+    # Scale bar
     geom_segment(
       aes(
         x = x_min ,
@@ -1558,7 +1267,7 @@ mono_turbo_species <- function(grid, factor = 1) {
     # label "50 m"
     annotate(
       "text",
-      x = x_min + 20 + 25,  # au milieu de la ligne
+      x = x_min + 20 + 25,
       y = y_max - 0.08 * (y_max - y_min),
       label = "50 m",
       hjust = 0.5,
@@ -1566,20 +1275,24 @@ mono_turbo_species <- function(grid, factor = 1) {
       size = 3,
       color = "white"
     ) +
-    # ajouter nom centré en bas
+    # Name of the taxon
     labs(
       title = grid$config$Name
     )
 }
 
-
-patch_turbo_ex <- function(marker, level, metric, selection, n){
-  
-  load("~/Bureau/ADNe_Nourague_2026/ADNe_Nourague_2026_files/.tab_rar_new.RData",
-       envir = .GlobalEnv)
+#' Plot the eDNA of some taxa with their stems in 2012 and 2022 (Figure 5)
+#'
+#' @param df_corr Result of make_cor_table(), it gives the taxa sorted by
+#'   increasing correlation.
+#' @param marker,level,metric Selection of the rows of df_corr.
+#' @param selection Ranks of the taxa to plot, in this sorted list.
+#' @param n Number of columns.
+#' @return A patchwork with one map per taxon.
+patch_turbo_ex <- function(df_corr, marker, level, metric, selection, n){
   
   # Level and Marker selection
-  common_tax <- tab_rar %>%
+  common_tax <- df_corr %>%
     dplyr::filter(Level == level, g.Marker == marker, Metric_corr == metric) %>%
     arrange(Correlation) %>%
     pull(Name)
@@ -1589,32 +1302,30 @@ patch_turbo_ex <- function(marker, level, metric, selection, n){
   
   plots <- lapply(common_tax,function(sp){
     
-    print(sp)
-    
     # Import genet grid
     genet_grid <- grid_read(list(
       "Type" = "genet",
       "Rar" = TRUE,
-      "Marker" = "Sper01",
-      "Level" = "Species",
+      "Marker" = marker,
+      "Level" = level,
       "Name" = sp,
       "Metric" = "Reads"
     ))
     
     # Bota year 1 grid
     bota_focus1 <- import_bota(list("Year" = 2012)) %>%
-      filter(Species == sp) %>%
+      filter(.data[[level]] == sp) %>%
       mutate(Year = factor(2012, levels = c(2012, 2022)))
     
     # Bota year 2 grid
     bota_focus2 <- import_bota(list("Year" = 2022)) %>%
-      filter(Species == sp) %>%
+      filter(.data[[level]] == sp) %>%
       mutate(Year = factor(2022, levels = c(2012, 2022)))
     
-    # générer la heatmap
+    # Heatmap
     p <- mono_turbo_species(genet_grid)
     
-    # Année 1
+    # Year 1
     p <- p +
       geom_point(
         data = bota_focus1,
@@ -1625,7 +1336,7 @@ patch_turbo_ex <- function(marker, level, metric, selection, n){
         fill = NA
       )
     
-    # Année 2
+    # Year 2
     p <- p +
       geom_point(
         data = bota_focus2,
@@ -1637,262 +1348,9 @@ patch_turbo_ex <- function(marker, level, metric, selection, n){
       )+
       guides(size = "none")
     
-    # ajouter indice en haut à gauche
-    # p <- p +
-    #   annotate(
-    #     "text",
-    #     x = (min(genet_grid$df$x)+max(genet_grid$df$x))/2,
-    #     y = min(genet_grid$df$y - 60),
-    #     label = paste0("Pearson's r = ", corr),
-    #     fontface = "bold",
-    #     hjust = 0.5,
-    #     vjust = 1,
-    #     size = 4,
-    #     color = "black"
-    #   )
+    p
   })
   
-  # assembler les plots en patchwork
+  # Patchwork
   wrap_plots(plots, ncol = n)
-  # plot_annotation(
-  #   title = Year,
-  #   theme = theme(
-  #     plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
-  #   )
-  # )
 }
-
-patch_turbo_species_years <- function(Year1, Year2){
-  
-  # Import Genet species
-  genet_sp <- give_genet_taxa(Rar = T, Level = "Species", Marker = "Sper01")
-  
-  # Import bota species
-  bota1 <- import_bota(list("Year" = Year1))
-  bota2 <- import_bota(list("Year" = Year2))
-  
-  # Keep unique species
-  bota_sp1 <- unique(bota1$Species)
-  bota_sp2 <- unique(bota2$Species)
-  
-  # Common species with genet
-  common_sp <- Reduce(intersect, list(genet_sp, bota_sp1, bota_sp2)) %>%
-    sort()
-  
-  # List of mini plots
-  plots <- list()
-  
-  # Loop over species
-  for(i in seq_along(common_sp)) {
-    
-    # Set species
-    sp <- common_sp[i]
-    
-    # Print species
-    print(sp)
-    
-    # Genet config
-    genet_config <- list(
-      "Type" = "genet",
-      "Rar" = TRUE,
-      "Marker" = "Sper01",
-      "Level" = "Species",
-      "Name" = sp,
-      "Metric" = "Reads"
-    )
-    
-    # Genèt Grid
-    genet_grid <- grid_read(genet_config)
-    
-    # Bota year 1 grid
-    bota_focus1 <- import_bota(list("Year" = Year1)) %>%
-      filter(Species == sp) %>%
-      mutate(Year = factor(Year1, levels = c(Year1, Year2)))
-    
-    # Bota year 2 grid
-    bota_focus2 <- import_bota(list("Year" = Year2)) %>%
-      filter(Species == sp) %>%
-      mutate(Year = factor(Year2, levels = c(Year1, Year2)))
-    
-    # générer la heatmap
-    p <- mono_turbo_species(genet_grid)
-    
-    # Année 1
-    p <- p +
-      geom_point(
-        data = bota_focus1,
-        aes(x = Xfield, y = Yfield, size = CircCorr/2),
-        color = "red",
-        shape = 21,
-        stroke = 0.3,
-        fill = NA
-      )
-    
-    # Année 2
-    p <- p +
-      geom_point(
-        data = bota_focus2,
-        aes(x = Xfield, y = Yfield, size = CircCorr),
-        color = "orange",
-        shape = 21,
-        stroke = 0.3,
-        fill = NA
-      ) +
-      guides(size = "none")
-    
-    # # Year color
-    # p <- p +
-    #   scale_color_manual(
-    #     values = setNames(
-    #       c("red", "orange"),
-    #       c(as.character(Year1), as.character(Year2))
-    #     ),
-    #     name = "Year"
-    #   ) +
-    #   guides(size = "none")
-    
-    # index
-    p <- p +
-      annotate(
-        "text",
-        x = min(genet_grid$df$x),
-        y = max(genet_grid$df$y + 60),
-        label = paste0("(", i, ")"),
-        fontface = "bold",
-        hjust = 0,
-        vjust = 1,
-        size = 4
-      ) 
-    
-    
-    plots[[i]] <- p
-  }
-  
-  # assembler les plots en patchwork
-  wrap_plots(plots, ncol = 4) 
-  # +
-  #   plot_annotation(
-  #     title = "Comparaison des Inventaires botaniques de 2012 et 2022 avec l'emprunte ADNe",
-  #     subtitle = "Au niveau specifique pour le marqueur Sper01",
-  #     theme = theme(
-  #       plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
-  #       plot.subtitle = element_text(hjust = 0.5, face = "italic", size = 12)
-  #     )
-  #   ) 
-  
-}
-
-# ==== < Unused but useful > ====
-
-# Whittaker plot
-plot_Whittaker_bota <- function(df, Level){
-  Ab_tib <- rank_ab_tib_bota(df, Level)
-  Ab_vec <- rank_ab_vec_bota(Ab_tib, Level)
-  
-  plot(Ab_vec, Distribution = "lnorm", main = "Bota")
-  param <- RAClnorm(Ab_vec)
-  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Abundance),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
-}
-# Whittaker plot
-plot_Whittaker_genet <- function(df, Level){
-  Ab_tib <- rank_ab_tib_genet(df, Level)
-  Ab_vec <- rank_ab_vec_genet(Ab_tib, Level)
-  
-  plot(Ab_vec, Distribution = "lnorm", ylab = "Reads")
-  param <- RAClnorm(Ab_vec)
-  text(0.8*max(Ab_tib$Rank),0.5*max(Ab_tib$Reads),paste0("mu = ", round(param$mu,digits = 3), "\n sigma = ", round(param$sigma,digits = 3)))
-}
-
-
-
-# ===== < DEPRECATED > =====
-
-
-
-multi_filter_flow <- function(){
-  
-  # Init
-  markers <- c("Sper01","18S","ITS2")
-  df_list <- list()
-  # Loop on markers
-  for(marker in markers){
-    
-    # marker taxid
-    taxid_vec <- unique(gene[[marker]]$taxid)
-    
-    # filter tax_table
-    df <- tax_table %>%
-      filter(taxid %in% taxid_vec)
-    
-    # Filtering steps dataframe
-    filter_steps <- tibble(
-      step = c(
-        "All species",
-        "Plants only",
-        "Dicots",
-        "Family identified",
-        "Species identified",
-        "Valid sp name",
-        "In Bota Inventory"
-      ),
-      Marker = marker,
-      n = c(
-        nrow(df),
-        sum(df$is_plant, na.rm = TRUE),
-        sum(df$is_plant & !df$is_monocot, na.rm = TRUE),
-        sum(df$is_plant & !df$is_monocot & df$not_na_family, na.rm = TRUE),
-        sum(df$is_plant & 
-              !df$is_monocot &
-              df$not_na_family & 
-              df$not_na_sp, 
-            na.rm = TRUE),
-        sum(df$is_plant & 
-              !df$is_monocot &
-              df$not_na_family & 
-              df$not_na_sp & 
-              df$valid_sp_name, 
-            na.rm = TRUE),
-        sum(df$is_plant & 
-              df$not_na_family & 
-              df$not_na_sp & 
-              df$valid_sp_name &
-              df$is_in_bota, 
-            na.rm = TRUE)
-      )
-    ) %>% 
-      mutate(`%` = (n*100) / nrow(df)) %>%
-      mutate(step = fct_reorder(step, n, .desc = TRUE)) %>%
-      mutate(Marker = factor(Marker, levels = c("Sper01", "18S", "ITS2")))
-    # Store in df_list
-    df_list[[marker]] <- filter_steps
-  }
-  
-  df_all <- bind_rows(df_list)
-  
-  ggplot(df_all, aes(x = step, y = n, fill = Marker)) +
-    geom_col(
-      position = position_dodge(width = 0.8),
-      width = 0.7,
-      colour = "black",
-      linewidth = 0.2
-    ) +
-    geom_text(
-      aes(label = n), 
-      vjust = -0.5,
-      position = position_dodge(width = 0.8)
-    ) +
-    theme_minimal() +
-    labs(
-      x = "Filtering step",
-      y = "Number of OTU",
-      title = "OTU filtering workflow"
-    ) +
-    theme(text = element_text(size = 14)) + 
-    geom_hline(
-      yintercept = length(unique(bota$Species)),
-      linetype = "dashed"
-    )
-  
-}
-
-

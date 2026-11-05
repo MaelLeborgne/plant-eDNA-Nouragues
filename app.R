@@ -1,6 +1,7 @@
 
 # ===== app.R =====
-# Contain the app for dashbord with shinny package
+# OLD DASHBOARD, NOT USED FOR THE REPORT. It relies on functions that no longer
+# exist and does not run anymore. The figures of the report come from app.Rmd.
 
 # ===== Libraries =====
 library(shiny)           # Dashboard package
